@@ -7,6 +7,8 @@ from sklearn.preprocessing import StandardScaler
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
+import requests
+from io import StringIO
 
 
 def format_movie_id(df) -> pd.DataFrame:
@@ -29,35 +31,31 @@ def format_df(df) -> pd.DataFrame:
     return df
 
 
-def parse_format_and_join_data(path) -> pd.DataFrame:
-    df = pd.read_csv(path + "combined_data_1_short.txt")
+def prepare_drive_link(url) -> str:
+    return 'https://drive.google.com/uc?export=download&id=' + url.split(
+        '/')[-2]
+
+
+def parse_format_and_join_data(drive_links) -> pd.DataFrame:
+    df = pd.read_csv(prepare_drive_link(drive_links["short_main_file"]))
     df = format_df(df)
-    movie_df = pd.read_csv(path + "movie_titles.csv",
+    movie_df = pd.read_csv(prepare_drive_link(drive_links["movie_info_csv"]),
                            header=0)[["movie_id", "year"]]
     df = df.merge(movie_df, on="movie_id")
     return df
 
 
 def main() -> None:
-    path = "C:/Users/reifv/root/Heidelberg Master/vs_codes/netflix_project/"
-    df = parse_format_and_join_data(path)
+    drive_links = {
+        "short_main_file":
+        "https://drive.google.com/file/d/1HAy11Oa03iMbKVbNhIN8JAp576U-py_T/view?usp=sharing",
+        "movie_info_csv":
+        "https://drive.google.com/file/d/1--R03vOj24Tnc4hOJxdEKkqu5q_yIiH8/view?usp=sharing"
+    }
+    df = parse_format_and_join_data(drive_links)
     print(df.head())
-    df = df[]
-    train_dataset, temp_test_dataset =  train_test_split(df, test_size=0.3,random_state=42)
-    test_dataset, valid_dataset =  train_test_split(temp_test_dataset, test_size=0.5,random_state=42)
-    train_labels = train_dataset.pop('rating')
-    test_labels = test_dataset.pop('rating')
-    valid_labels = valid_dataset.pop('rating')
-    train_stats = train_dataset.describe()
-    train_stats = train_stats.transpose()
-    normed_train_data = pd.DataFrame(StandardScaler().fit_transform(train_dataset), columns=train_dataset.columns, index=train_dataset.index)
-    normed_test_data = pd.DataFrame(StandardScaler().fit_transform(test_dataset), columns=test_dataset.columns, index=test_dataset.index)
-    normed_valid_data = pd.DataFrame(StandardScaler().fit_transform(valid_dataset), columns=valid_dataset.columns, index=valid_dataset.index)
-    x_train, y_train, x_valid, y_valid = normed_train_data, train_labels, normed_valid_data, valid_labels
-
-
-
     print(1)
+
 
 if __name__ == "__main__":
     main()
