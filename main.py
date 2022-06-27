@@ -53,6 +53,7 @@ def show_dataframe(data: pd.DataFrame) -> None:
 
 
 def main() -> None:
+<<<<<<< HEAD
     parameters = json.load(open(file="./parameters.json", encoding="utf-8"))
     rating_data = parse_format_and_join_data(
         url_main_file=parameters["url_short_main_file"],
@@ -60,6 +61,18 @@ def main() -> None:
     )
     show_dataframe(rating_data)
 
+=======
+    drive_links = {
+        "short_main_file":
+        "https://drive.google.com/file/d/1HAy11Oa03iMbKVbNhIN8JAp576U-py_T/view?usp=sharing",
+        "movie_info_csv":
+        "https://drive.google.com/file/d/1--R03vOj24Tnc4hOJxdEKkqu5q_yIiH8/view?usp=sharing"
+    }
+    df = parse_format_and_join_data(drive_links)
+    print(df.head())
+    print(1)
+    print("test feature")
+>>>>>>> 617df6ac7b8f0243a28ee444f60a14336206564b
 
 if __name__ == "__main__":
     main()
