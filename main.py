@@ -1,3 +1,5 @@
+import json
+from typing import Union
 import tensorflow as tf
 from tensorboard.plugins.hparams import api as hp
 import datetime
@@ -7,54 +9,56 @@ from sklearn.preprocessing import StandardScaler
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
-import requests
-from io import StringIO
 
 
-def format_movie_id(df) -> pd.DataFrame:
-    df = df.reset_index()
-    new_col = []
-    temp = "1:"
-    for row in df.itertuples():
-        if ":" in row[1]:
-            temp = row[1]
-        new_col.append(temp[:-1])
-    df["movie_id"] = new_col
-    return df
+def format_data(data: pd.DataFrame) -> pd.DataFrame:
+    data['date'] = pd.to_datetime(data['date'], errors='coerce')
+    mask = np.logical_and(data['rating'].isnull(), data['date'].isnull())
+    data['movie_id'] = np.nan
+    data['movie_id'] = data.loc[mask, 'user_id'].str.extract('(\d+)')
+    data['movie_id'] = data['movie_id'].ffill()
+    data = data.loc[~mask]
+    data = data.astype({'movie_id': 'int', 'user_id': 'int'})
+    return data
 
 
-def format_df(df) -> pd.DataFrame:
-    df = format_movie_id(df)
-    df.columns = ["customer_id", "rating", "date", "movie_id"]
-    df["movie_id"] = df["movie_id"].astype(int)
-    df["date"] = pd.to_datetime(df["date"])
-    return df
-
-
-def prepare_drive_link(url) -> str:
+def prepare_drive_link(url: str) -> str:
     return 'https://drive.google.com/uc?export=download&id=' + url.split(
         '/')[-2]
 
 
-def parse_format_and_join_data(drive_links) -> pd.DataFrame:
-    df = pd.read_csv(prepare_drive_link(drive_links["short_main_file"]))
-    df = format_df(df)
-    movie_df = pd.read_csv(prepare_drive_link(drive_links["movie_info_csv"]),
-                           header=0)[["movie_id", "year"]]
-    df = df.merge(movie_df, on="movie_id")
-    return df
+def parse_format_and_join_data(url_main_file: str,
+                               url_movie_file: str) -> pd.DataFrame:
+    data = pd.read_csv(prepare_drive_link(url_main_file),
+                       sep=',',
+                       na_values=[''],
+                       names=['user_id', 'rating', 'date'],
+                       dtype={
+                           'user_id': 'string',
+                           'rating': 'Int64',
+                           'date': 'string'
+                       })
+    movie_data = pd.read_csv(
+        prepare_drive_link(url_movie_file),
+        header=0,
+    )[["movie_id", "year"]]
+    data = format_data(data)
+    data = data.merge(movie_data, on="movie_id")
+    return data
+
+
+def show_dataframe(data: pd.DataFrame) -> None:
+    print(data.info())
+    print(data.head())
 
 
 def main() -> None:
-    drive_links = {
-        "short_main_file":
-        "https://drive.google.com/file/d/1HAy11Oa03iMbKVbNhIN8JAp576U-py_T/view?usp=sharing",
-        "movie_info_csv":
-        "https://drive.google.com/file/d/1--R03vOj24Tnc4hOJxdEKkqu5q_yIiH8/view?usp=sharing"
-    }
-    df = parse_format_and_join_data(drive_links)
-    print(df.head())
-    print(1)
+    parameters = json.load(open(file="./parameters.json", encoding="utf-8"))
+    rating_data = parse_format_and_join_data(
+        url_main_file=parameters["url_short_main_file"],
+        url_movie_file=parameters["url_movie_info_file"],
+    )
+    show_dataframe(rating_data)
 
 
 if __name__ == "__main__":
