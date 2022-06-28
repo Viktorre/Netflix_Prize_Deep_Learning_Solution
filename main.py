@@ -1,4 +1,5 @@
 import json
+import os
 from typing import Union
 import tensorflow as tf
 from tensorboard.plugins.hparams import api as hp
@@ -9,16 +10,19 @@ from sklearn.preprocessing import StandardScaler
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
+from dotenv import load_dotenv
 
 
-def format_data(data: pd.DataFrame) -> pd.DataFrame:
-    data['date'] = pd.to_datetime(data['date'], errors='coerce')
+def format_movie_id_col_and_update_dtypes(data: pd.DataFrame) -> pd.DataFrame:
+    """ Reformats movie_id, which before were in seperate lines, into a new column and deletes obsolete lines. Returns data containing each information as a separate column with adequate data types. 
+    """
     mask = np.logical_and(data['rating'].isnull(), data['date'].isnull())
     data['movie_id'] = np.nan
     data['movie_id'] = data.loc[mask, 'user_id'].str.extract('(\d+)')
     data['movie_id'] = data['movie_id'].ffill()
     data = data.loc[~mask]
-    data = data.astype({'movie_id': 'int', 'user_id': 'int'})
+    data['date'] = pd.to_datetime(data['date'], errors='coerce')
+    data = data.astype({'movie_id': 'int64', 'user_id': 'int64'})
     return data
 
 
@@ -27,9 +31,10 @@ def prepare_drive_link(url: str) -> str:
         '/')[-2]
 
 
-def parse_format_and_join_data(url_main_file: str,
-                               url_movie_file: str) -> pd.DataFrame:
-    data = pd.read_csv(prepare_drive_link(url_main_file),
+def parse_format_and_join_data() -> pd.DataFrame:
+    """ Parses the main movie rating file and movie info file. Formats the main movie rating file and joins it with the movie info file.
+    """
+    data = pd.read_csv(prepare_drive_link(os.getenv('url_short_main_file')),
                        sep=',',
                        na_values=[''],
                        names=['user_id', 'rating', 'date'],
@@ -39,10 +44,10 @@ def parse_format_and_join_data(url_main_file: str,
                            'date': 'string'
                        })
     movie_data = pd.read_csv(
-        prepare_drive_link(url_movie_file),
+        prepare_drive_link(os.getenv('url_movie_info_file')),
         header=0,
     )[["movie_id", "year"]]
-    data = format_data(data)
+    data = format_movie_id_col_and_update_dtypes(data)
     data = data.merge(movie_data, on="movie_id")
     return data
 
@@ -53,11 +58,8 @@ def show_dataframe(data: pd.DataFrame) -> None:
 
 
 def main() -> None:
-    parameters = json.load(open(file="./parameters.json", encoding="utf-8"))
-    rating_data = parse_format_and_join_data(
-        url_main_file=parameters["url_short_main_file"],
-        url_movie_file=parameters["url_movie_info_file"],
-    )
+    load_dotenv('.env.md')
+    rating_data = parse_format_and_join_data()
     show_dataframe(rating_data)
 
 
