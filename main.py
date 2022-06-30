@@ -47,11 +47,11 @@ def parse_format_and_join_data(drive_links) -> pd.DataFrame:
 
 
 def get_y(data: pd.DataFrame, y_col: str) -> pd.DataFrame:
-    return data.loc[:, [y_col]]
+    return data[y_col]
 
 
 def get_and_scale_x(data: pd.DataFrame, x_cols: list[str]) -> pd.DataFrame:
-    data = data.loc[:, x_cols]
+    data = data[x_cols]
     return pd.DataFrame(StandardScaler().fit_transform(data),
                         columns=data.columns,
                         index=data.index)
@@ -60,7 +60,7 @@ def get_and_scale_x(data: pd.DataFrame, x_cols: list[str]) -> pd.DataFrame:
 def scale_and_split_data_into_x_train_etc(
         data: pd.DataFrame, y_col: str,
         x_cols: list[str]) -> Tuple[pd.DataFrame]:
-    """Turns main dataframe into y_train, x_train, y_valid, x_valid, y_test, x_test, where all x variables are normalized between -1 and 1.
+    """Extracts training, validation and test data from the main dataframe. All x-variables are normalized between -1 and 1.
     """
     train_data, temp_test_data = train_test_split(data,
                                                   test_size=0.3,
@@ -68,11 +68,14 @@ def scale_and_split_data_into_x_train_etc(
     test_data, valid_data = train_test_split(temp_test_data,
                                              test_size=0.5,
                                              random_state=42)
-    return get_y(train_data,
-                 y_col), get_and_scale_x(train_data, x_cols), get_y(
-                     valid_data,
-                     y_col), get_and_scale_x(valid_data, x_cols), get_y(
-                         test_data, y_col), get_and_scale_x(test_data, x_cols)
+    return {
+        "y_train": get_y(train_data, y_col),
+        "x_train": get_and_scale_x(train_data, x_cols),
+        "y_valid": get_y(valid_data, y_col),
+        "x_valid": get_and_scale_x(valid_data, x_cols),
+        "y_test": get_y(test_data, y_col),
+        "x_test": get_and_scale_x(test_data, x_cols)
+    }
 
 
 def main() -> None:
@@ -82,20 +85,20 @@ def main() -> None:
         "movie_info_csv":
         "https://drive.google.com/file/d/1--R03vOj24Tnc4hOJxdEKkqu5q_yIiH8/view?usp=sharing"
     }
-    df = parse_format_and_join_data(drive_links)
-    print(df.info())
-    print(df.head())
+    rating_data = parse_format_and_join_data(drive_links)
+    print(rating_data.info())
+    print(rating_data.head())
 
-    df = df.dropna()
-    df = df.astype({
+    rating_data = rating_data.dropna()
+    rating_data = rating_data.astype({
         'movie_id': 'int64',
         'customer_id': 'int64',
         "rating": "int64"
     })
-    y_train, x_train, y_valid, x_valid, y_test, x_test = scale_and_split_data_into_x_train_etc(
-        df,y_col="rating",x_cols=["year"])
-    for w in y_train, x_train, y_valid, x_valid, y_test, x_test:
-        print(w,'\n')
+    model_input_data = scale_and_split_data_into_x_train_etc(rating_data,
+                                                             y_col="rating",
+                                                             x_cols=["year"])
+
 
 if __name__ == "__main__":
     main()
