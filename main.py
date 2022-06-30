@@ -14,8 +14,7 @@ from dotenv import load_dotenv
 
 
 def format_movie_id_col_and_update_dtypes(data: pd.DataFrame) -> pd.DataFrame:
-    """ Reformats movie_id, which before were in seperate lines, into a new column and deletes obsolete lines. Returns data containing each information as a separate column with adequate data types. 
-    """
+    """This helper function extracts the movie IDs from the column "user_id" and saves them into a separate column. Also it turns the "_id" columns into type int64 and the "date" column into pandas date format."""
     mask = np.logical_and(data['rating'].isnull(), data['date'].isnull())
     data['movie_id'] = np.nan
     data['movie_id'] = data.loc[mask, 'user_id'].str.extract('(\d+)')
@@ -31,8 +30,10 @@ def prepare_drive_link(url: str) -> str:
         '/')[-2]
 
 
-def parse_format_and_join_data() -> pd.DataFrame:
-    """ Parses the main movie rating file and movie info file. Formats the main movie rating file and joins it with the movie info file.
+def parse_and_join_data() -> pd.DataFrame:
+    """The 2 following movie files are being imported, parsed and joined:
+    - ratings
+    - (additional) info
     """
     data = pd.read_csv(prepare_drive_link(os.getenv('url_short_main_file')),
                        sep=',',
@@ -59,7 +60,7 @@ def show_dataframe(data: pd.DataFrame) -> None:
 
 def main() -> None:
     load_dotenv('.env.md')
-    rating_data = parse_format_and_join_data()
+    rating_data = parse_and_join_data()
     show_dataframe(rating_data)
 
 
