@@ -1,4 +1,4 @@
-from typing import Tuple
+from typing import Dict
 import tensorflow as tf
 from tensorboard.plugins.hparams import api as hp
 import datetime
@@ -59,7 +59,7 @@ def get_and_scale_x(data: pd.DataFrame, x_cols: list[str]) -> pd.DataFrame:
 
 def scale_and_split_data_into_x_train_etc(
         data: pd.DataFrame, y_col: str,
-        x_cols: list[str]) -> Tuple[pd.DataFrame]:
+        x_cols: list[str]) -> Dict[str, pd.DataFrame]:
     """Extracts training, validation and test data from the main dataframe. All x-variables are normalized between -1 and 1.
     """
     train_data, temp_test_data = train_test_split(data,
