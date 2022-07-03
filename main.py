@@ -1,4 +1,6 @@
-from typing import Dict
+import json
+import os
+from typing import Union, Dict
 import tensorflow as tf
 from tensorboard.plugins.hparams import api as hp
 import datetime
@@ -8,42 +10,52 @@ from sklearn.preprocessing import StandardScaler
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
-import requests
-from io import StringIO
+from dotenv import load_dotenv
 
 
-def format_movie_id(df) -> pd.DataFrame:
-    df = df.reset_index()
-    new_col = []
-    temp = "1:"
-    for row in df.itertuples():
-        if ":" in row[1]:
-            temp = row[1]
-        new_col.append(temp[:-1])
-    df["movie_id"] = new_col
-    return df
+def format_movie_id_col_and_update_dtypes(data: pd.DataFrame) -> pd.DataFrame:
+    """This helper function extracts the movie IDs from the column "user_id" and saves them into a separate column. Also it turns the "_id" columns into type int64 and the "date" column into pandas date format."""
+    mask = np.logical_and(data['rating'].isnull(), data['date'].isnull())
+    data['movie_id'] = np.nan
+    data['movie_id'] = data.loc[mask, 'user_id'].str.extract('(\d+)')
+    data['movie_id'] = data['movie_id'].ffill()
+    data = data.loc[~mask]
+    data['date'] = pd.to_datetime(data['date'], errors='coerce')
+    data = data.astype({'movie_id': 'int64', 'user_id': 'int64'})
+    return data
 
 
-def format_df(df) -> pd.DataFrame:
-    df = format_movie_id(df)
-    df.columns = ["customer_id", "rating", "date", "movie_id"]
-    df["movie_id"] = df["movie_id"].astype(int)
-    df["date"] = pd.to_datetime(df["date"])
-    return df
-
-
-def prepare_drive_link(url) -> str:
+def prepare_drive_link(url: str) -> str:
     return 'https://drive.google.com/uc?export=download&id=' + url.split(
         '/')[-2]
 
 
-def parse_format_and_join_data(drive_links) -> pd.DataFrame:
-    df = pd.read_csv(prepare_drive_link(drive_links["short_main_file"]))
-    df = format_df(df)
-    movie_df = pd.read_csv(prepare_drive_link(drive_links["movie_info_csv"]),
-                           header=0)[["movie_id", "year"]]
-    df = df.merge(movie_df, on="movie_id")
-    return df
+def parse_and_join_data() -> pd.DataFrame:
+    """The 2 following movie files are being imported, parsed and joined:
+    - ratings
+    - (additional) info
+    """
+    data = pd.read_csv(prepare_drive_link(os.getenv('url_short_main_file')),
+                       sep=',',
+                       na_values=[''],
+                       names=['user_id', 'rating', 'date'],
+                       dtype={
+                           'user_id': 'string',
+                           'rating': 'Int64',
+                           'date': 'string'
+                       })
+    movie_data = pd.read_csv(
+        prepare_drive_link(os.getenv('url_movie_info_file')),
+        header=0,
+    )[["movie_id", "year"]]
+    data = format_movie_id_col_and_update_dtypes(data)
+    data = data.merge(movie_data, on="movie_id")
+    return data
+
+
+def show_dataframe(data: pd.DataFrame) -> None:
+    print(data.info())
+    print(data.head())
 
 
 def get_y(data: pd.DataFrame, y_col: str) -> pd.DataFrame:
@@ -79,22 +91,9 @@ def scale_and_split_data_into_x_train_etc(
 
 
 def main() -> None:
-    drive_links = {
-        "short_main_file":
-        "https://drive.google.com/file/d/1HAy11Oa03iMbKVbNhIN8JAp576U-py_T/view?usp=sharing",
-        "movie_info_csv":
-        "https://drive.google.com/file/d/1--R03vOj24Tnc4hOJxdEKkqu5q_yIiH8/view?usp=sharing"
-    }
-    rating_data = parse_format_and_join_data(drive_links)
-    print(rating_data.info())
-    print(rating_data.head())
-
-    rating_data = rating_data.dropna()
-    rating_data = rating_data.astype({
-        'movie_id': 'int64',
-        'customer_id': 'int64',
-        "rating": "int64"
-    })
+    load_dotenv('.env.md')
+    rating_data = parse_and_join_data()
+    show_dataframe(rating_data)
     model_input_data = scale_and_split_data_into_x_train_etc(rating_data,
                                                              y_col="rating",
                                                              x_cols=["year"])
