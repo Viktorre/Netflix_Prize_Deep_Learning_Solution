@@ -1,6 +1,6 @@
 import json
 import os
-from typing import Union
+from typing import Union, Dict, List
 import tensorflow as tf
 from tensorboard.plugins.hparams import api as hp
 import datetime
@@ -58,10 +58,45 @@ def show_dataframe(data: pd.DataFrame) -> None:
     print(data.head())
 
 
+def get_y(data: pd.DataFrame, y_col: str) -> pd.DataFrame:
+    return data[y_col]
+
+
+def get_and_scale_x(data: pd.DataFrame, x_cols: List[str]) -> pd.DataFrame:
+    data = data[x_cols]
+    return pd.DataFrame(StandardScaler().fit_transform(data),
+                        columns=data.columns,
+                        index=data.index)
+
+
+def scale_and_split_data_into_x_train_etc(
+        data: pd.DataFrame, y_col: str,
+        x_cols: List[str]) -> Dict[str, pd.DataFrame]:
+    """Extracts training, validation and test data from the main dataframe. All x-variables are normalized between -1 and 1.
+    """
+    train_data, temp_test_data = train_test_split(data,
+                                                  test_size=0.3,
+                                                  random_state=42)
+    test_data, valid_data = train_test_split(temp_test_data,
+                                             test_size=0.5,
+                                             random_state=42)
+    return {
+        "y_train": get_y(train_data, y_col),
+        "x_train": get_and_scale_x(train_data, x_cols),
+        "y_valid": get_y(valid_data, y_col),
+        "x_valid": get_and_scale_x(valid_data, x_cols),
+        "y_test": get_y(test_data, y_col),
+        "x_test": get_and_scale_x(test_data, x_cols)
+    }
+
+
 def main() -> None:
     load_dotenv('.env.md')
     rating_data = parse_and_join_data()
     show_dataframe(rating_data)
+    model_input_data = scale_and_split_data_into_x_train_etc(rating_data,
+                                                             y_col="rating",
+                                                             x_cols=["year"])
 
 
 if __name__ == "__main__":
