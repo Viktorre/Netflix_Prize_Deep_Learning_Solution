@@ -1,6 +1,6 @@
 import json
 import os
-from typing import Union, Dict
+from typing import Union, Dict, List
 import tensorflow as tf
 from tensorboard.plugins.hparams import api as hp
 import datetime
@@ -62,7 +62,7 @@ def get_y(data: pd.DataFrame, y_col: str) -> pd.DataFrame:
     return data[y_col]
 
 
-def get_and_scale_x(data: pd.DataFrame, x_cols: list[str]) -> pd.DataFrame:
+def get_and_scale_x(data: pd.DataFrame, x_cols: List[str]) -> pd.DataFrame:
     data = data[x_cols]
     return pd.DataFrame(StandardScaler().fit_transform(data),
                         columns=data.columns,
@@ -71,7 +71,7 @@ def get_and_scale_x(data: pd.DataFrame, x_cols: list[str]) -> pd.DataFrame:
 
 def scale_and_split_data_into_x_train_etc(
         data: pd.DataFrame, y_col: str,
-        x_cols: list[str]) -> Dict[str, pd.DataFrame]:
+        x_cols: List[str]) -> Dict[str, pd.DataFrame]:
     """Extracts training, validation and test data from the main dataframe. All x-variables are normalized between -1 and 1.
     """
     train_data, temp_test_data = train_test_split(data,
