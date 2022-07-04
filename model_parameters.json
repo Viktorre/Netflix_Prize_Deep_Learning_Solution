@@ -1,0 +1,8 @@
+{
+    "num_units" : [32],
+    "num_layers" : [1],
+    "optimizer" : ["adam"],
+    "lr" : [0.1],
+    "batch_size" : [1],
+    "metric_accuracy" : "accuracy"
+}
