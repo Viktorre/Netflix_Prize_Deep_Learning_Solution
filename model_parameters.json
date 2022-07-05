@@ -4,5 +4,6 @@
     "optimizer" : ["adam"],
     "lr" : [0.1],
     "batch_size" : [1],
-    "metric_accuracy" : "accuracy"
+    "metric_accuracy" : "accuracy",
+    "epochs" : 5
 }
