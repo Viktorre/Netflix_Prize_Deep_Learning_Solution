@@ -1,6 +1,6 @@
 import json
 import os
-from typing import Union, Dict, List
+from typing import Dict, List
 import tensorflow as tf
 from tensorboard.plugins.hparams import api as hp
 import datetime
@@ -108,6 +108,8 @@ def get_hparam(parameter_name: str) -> hp:
     """Accesses model_parameters.json by arg parameter_name as dict key and returns respective value as tensorboard.plugins.hparams object."""
     return hp.HParam(parameter_name, hp.Discrete(access_params_json()[parameter_name]))
 
+def get_log_name_with_current_timestamp() ->str:
+    return 'logs_'+datetime.datetime.now().strftime("%Y%m%d-%H%M") + '/hparam_tuning'
 
 def log_this_session(session_name: str) -> None:
     """Creates log folder in root directory and sets up logfile structure for hparams view in tensorboard.
@@ -179,8 +181,7 @@ def main() -> None:
     model_input_data = scale_and_split_data_into_x_train_etc(rating_data,
                                                              y_col="rating",
                                                              x_cols=["year"])
-    log_name = 'logs_'+datetime.datetime.now().strftime("%Y%m%d-%H%M%S") + \
-        '/hparam_tuning'
+    log_name =  get_log_name_with_current_timestamp()
     log_this_session(log_name)
     tune_model(model_input_data, log_name)
     print_tensorboard_bash_command(log_name)
