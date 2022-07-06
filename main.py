@@ -166,8 +166,8 @@ def tune_model(input_data: Dict[str, pd.DataFrame], log_name: str) -> None:
                         session_num += 1
 
 
-def print_tensorboard_browser_url(log_name: str) -> None:
-    """Prints url for opening log file of current tuning run in browser. Highly recommended if many tuning parameters are run at once.
+def print_tensorboard_bash_command(log_name: str) -> None:
+    """Prints bash command for opening log file of current tuning run in browser. Highly recommended if many tuning parameters are run at once.
     """
     print("tensorboard --logdir "+log_name[:20]+" --port "+log_name[14:18])
 
@@ -183,7 +183,7 @@ def main() -> None:
         '/hparam_tuning'
     log_this_session(log_name)
     tune_model(model_input_data, log_name)
-    print_tensorboard_browser_url(log_name)
+    print_tensorboard_bash_command(log_name)
 
 
 if __name__ == "__main__":
