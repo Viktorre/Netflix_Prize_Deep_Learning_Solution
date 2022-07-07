@@ -91,6 +91,14 @@ def scale_and_split_data_into_x_train_etc(
 
 
 def main() -> None:
+    from pyspark.sql import SparkSession
+
+    spark = SparkSession \
+        .builder \
+        .appName("Python Spark SQL basic example") \
+        .config("spark.some.config.option", "some-value") \
+        .getOrCreate()
+    
     load_dotenv('.env.md')
     rating_data = parse_and_join_data()
     show_dataframe(rating_data)
