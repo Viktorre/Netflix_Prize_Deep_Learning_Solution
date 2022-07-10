@@ -1,16 +1,17 @@
-import json
-import os
-from typing import Dict, List
-import tensorflow as tf
-from tensorboard.plugins.hparams import api as hp
 import datetime
-from sklearn.model_selection import train_test_split
-import time
-from sklearn.preprocessing import StandardScaler
-import numpy as np
-import pandas as pd
-from tqdm import tqdm
 from dotenv import load_dotenv
+import json
+import numpy as np
+import os
+import pandas as pd
+from itertools import product
+from sklearn.preprocessing import StandardScaler
+from sklearn.model_selection import train_test_split
+from tensorboard.plugins.hparams import api as hp
+import tensorflow as tf
+import time
+from tqdm import tqdm
+from typing import Dict, List
 
 
 def format_movie_id_col_and_update_dtypes(data: pd.DataFrame) -> pd.DataFrame:
@@ -21,8 +22,11 @@ def format_movie_id_col_and_update_dtypes(data: pd.DataFrame) -> pd.DataFrame:
     data['movie_id'] = data['movie_id'].ffill()
     data = data.loc[~mask]
     data['date'] = pd.to_datetime(data['date'], errors='coerce')
-    data = data.astype(
-        {'movie_id': 'int64', 'user_id': 'int64', 'rating': int})
+    data = data.astype({
+        'movie_id': 'int64',
+        'user_id': 'int64',
+        'rating': int
+    })
     return data
 
 
@@ -44,7 +48,7 @@ def parse_and_join_data() -> pd.DataFrame:
                            'user_id': 'string',
                            'rating': 'Int64',
                            'date': 'string'
-    })
+                       })
     movie_data = pd.read_csv(
         prepare_drive_link(os.getenv('url_movie_info_file')),
         header=0,
@@ -91,8 +95,8 @@ def scale_and_split_data_into_x_train_etc(
     }
 
 
-# might be wrong return type hint. for example "adam"-optimizer has type <class 'keras.optimizers.optimizer_v2.adam.Adam'>
-def create_optimizer_w_learning_rate(opt_name: str, lr: float) -> tf.keras.optimizers:
+def create_optimizer_w_learning_rate(opt_name: str,
+                                     lr: float) -> tf.keras.optimizers:
     if opt_name == "sgd":
         return tf.keras.optimizers.SGD(learning_rate=lr)
     if opt_name == "adam":
@@ -106,24 +110,35 @@ def access_params_json() -> Dict:
 
 def get_hparam(parameter_name: str) -> hp:
     """Accesses model_parameters.json by arg parameter_name as dict key and returns respective value as tensorboard.plugins.hparams object."""
-    return hp.HParam(parameter_name, hp.Discrete(access_params_json()[parameter_name]))
+    return hp.HParam(parameter_name,
+                     hp.Discrete(access_params_json()[parameter_name]))
 
-def get_log_name_with_current_timestamp() ->str:
-    return 'logs_'+datetime.datetime.now().strftime("%Y%m%d-%H%M") + '/hparam_tuning'
+
+def get_log_name_with_current_timestamp() -> str:
+    return f'logs_{datetime.datetime.now().strftime("%Y%m%d-%H%M")}/hparam_tuning'
+
 
 def log_this_session(session_name: str) -> None:
     """Creates log folder in root directory and sets up logfile structure for hparams view in tensorboard.
     """
     with tf.summary.create_file_writer(session_name).as_default():
         hp.hparams_config(
-            hparams=[get_hparam('num_units'), get_hparam('num_layers'), get_hparam(
-                'optimizer'), get_hparam('lr'), get_hparam('batch_size')],
-            metrics=[hp.Metric(access_params_json()[
-                               'metric_accuracy'], display_name='Accuracy')],
+            hparams=[
+                get_hparam('num_units'),
+                get_hparam('num_layers'),
+                get_hparam('optimizer'),
+                get_hparam('lr'),
+                get_hparam('batch_size')
+            ],
+            metrics=[
+                hp.Metric(access_params_json()['metric_accuracy'],
+                          display_name='Accuracy')
+            ],
         )
 
 
-def build_train_evaluate_one_neural_network(hparams, run_dir, input_data) -> List[float]:
+def build_train_evaluate_one_neural_network(hparams, run_dir,
+                                            input_data) -> List[float]:
     """Builds neural network instance given one set of hyper parameters. Trains network on train/valid data and returns evaluation metric calculated on test data.
     """
     model = tf.keras.models.Sequential()
@@ -132,46 +147,70 @@ def build_train_evaluate_one_neural_network(hparams, run_dir, input_data) -> Lis
     model.add(tf.keras.layers.Dense(len(input_data["y_train"].unique())))
     model.compile(
         optimizer=create_optimizer_w_learning_rate(
-            hparams["HP_OPTIMIZER"], hparams["HP_LR"],),
-        loss='BinaryCrossentropy', metrics=['accuracy'],)
-    model.fit(input_data["x_train"], input_data["y_train"], validation_data=(input_data["x_valid"], input_data["y_valid"]), epochs=access_params_json()["epochs"], shuffle=True, verbose=True, callbacks=[tf.keras.callbacks.TensorBoard(log_dir=run_dir+'_'+str(
-        hparams["HP_NUM_LAYERS"])+'layers_'+str(hparams["HP_NUM_UNITS"])+'nodes_'+hparams["HP_OPTIMIZER"]+str(hparams["HP_LR"])+'_'+str(hparams["HP_BATCH_SIZE"])+'batchsize_', histogram_freq=1)], batch_size=(hparams["HP_BATCH_SIZE"]))
-    _, evalutation = model.evaluate(
-        input_data["x_valid"], input_data["y_valid"], verbose=False)
+            hparams["HP_OPTIMIZER"],
+            hparams["HP_LR"],
+        ),
+        loss='BinaryCrossentropy',
+        metrics=['accuracy'],
+    )
+    model.fit(input_data["x_train"],
+              input_data["y_train"],
+              validation_data=(input_data["x_valid"], input_data["y_valid"]),
+              epochs=access_params_json()["epochs"],
+              shuffle=True,
+              verbose=True,
+              callbacks=[
+                  tf.keras.callbacks.TensorBoard(
+                      log_dir=run_dir + '_' + str(hparams["HP_NUM_LAYERS"]) +
+                      'layers_' + str(hparams["HP_NUM_UNITS"]) + 'nodes_' +
+                      hparams["HP_OPTIMIZER"] + str(hparams["HP_LR"]) + '_' +
+                      str(hparams["HP_BATCH_SIZE"]) + 'batchsize_',
+                      histogram_freq=1)
+              ],
+              batch_size=(hparams["HP_BATCH_SIZE"]))
+    _, evalutation = model.evaluate(input_data["x_valid"],
+                                    input_data["y_valid"],
+                                    verbose=False)
     return evalutation
 
 
-def log_and_run_one_hparams_combination(run_dir, hparams, input_data):
+def log_and_run_one_hparams_combination(run_dir: str, hparams: Dict,
+                                        input_data: Dict[str, pd.DataFrame]):
     """Creates one subfolder in log directory and fills it with evaluation results after training the neural network with one hyper parameter setting.
     """
     with tf.summary.create_file_writer(run_dir).as_default():
         hp.hparams(hparams)  # record the values used in this trial
         accuracy = build_train_evaluate_one_neural_network(
             hparams, run_dir, input_data)
-        tf.summary.scalar(access_params_json()[
-                          "metric_accuracy"], accuracy, step=1)
+        tf.summary.scalar(access_params_json()["metric_accuracy"],
+                          accuracy,
+                          step=1)
 
 
 def tune_model(input_data: Dict[str, pd.DataFrame], log_name: str) -> None:
     """Loops through all hyper parameter combinations and calls the run() function in each iteration to log its (is/oos) performance."""
     session_num = 0
-    for num_units in tqdm(get_hparam('num_units').domain.values):
-        for num_layers in get_hparam('num_layers').domain.values:
-            for optimizer in get_hparam('optimizer').domain.values:
-                for lr in get_hparam('lr').domain.values:
-                    for batch_size in get_hparam('batch_size').domain.values:
-                        hparams = {"HP_NUM_UNITS": num_units, "HP_NUM_LAYERS": num_layers,
-                                   "HP_OPTIMIZER": optimizer, "HP_LR": lr, "HP_BATCH_SIZE": batch_size}
-                        run_name = "run-%d" % session_num
-                        log_and_run_one_hparams_combination(
-                            log_name + run_name, hparams, input_data)
-                        session_num += 1
+    for hparams_combination in tqdm(
+            product(
+                get_hparam('num_units').domain.values,
+                get_hparam('num_layers').domain.values,
+                get_hparam('optimizer').domain.values,
+                get_hparam('lr').domain.values,
+                get_hparam('batch_size').domain.values)):
+        run_name = f'run-{session_num}'
+        log_and_run_one_hparams_combination(
+            log_name + run_name,
+            dict(
+                zip(("HP_NUM_UNITS", "HP_NUM_LAYERS", "HP_OPTIMIZER", "HP_LR",
+                     "HP_BATCH_SIZE"), hparams_combination)), input_data)
+        session_num += 1
 
 
 def print_tensorboard_bash_command(log_name: str) -> None:
     """Prints bash command for opening log file of current tuning run in browser. Highly recommended if many tuning parameters are run at once.
     """
-    print("tensorboard --logdir "+log_name[:20]+" --port "+log_name[14:18])
+    print("tensorboard --logdir " + log_name[:20] + " --port " +
+          log_name[14:18])
 
 
 def main() -> None:
@@ -181,7 +220,7 @@ def main() -> None:
     model_input_data = scale_and_split_data_into_x_train_etc(rating_data,
                                                              y_col="rating",
                                                              x_cols=["year"])
-    log_name =  get_log_name_with_current_timestamp()
+    log_name = get_log_name_with_current_timestamp()
     log_this_session(log_name)
     tune_model(model_input_data, log_name)
     print_tensorboard_bash_command(log_name)
