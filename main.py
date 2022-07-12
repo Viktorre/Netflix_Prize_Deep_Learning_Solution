@@ -25,7 +25,7 @@ def format_movie_id_col_and_update_dtypes(data: pd.DataFrame) -> pd.DataFrame:
     data = data.astype({
         'movie_id': 'int64',
         'user_id': 'int64',
-        'rating': int
+        'rating': 'int64'
     })
     return data
 
@@ -96,11 +96,11 @@ def scale_and_split_data_into_x_train_etc(
 
 
 def create_optimizer_w_learning_rate(opt_name: str,
-                                     lr: float) -> tf.keras.optimizers:
+                                     learning_rate: float) -> tf.keras.optimizers:
     if opt_name == "sgd":
-        return tf.keras.optimizers.SGD(learning_rate=lr)
+        return tf.keras.optimizers.SGD(learning_rate=learning_rate)
     if opt_name == "adam":
-        return tf.keras.optimizers.Adam(learning_rate=lr)
+        return tf.keras.optimizers.Adam(learning_rate=learning_rate)
     return "error"
 
 
@@ -115,10 +115,10 @@ def get_hparam(parameter_name: str) -> hp:
 
 
 def get_log_name_with_current_timestamp() -> str:
-    return f'logs_{datetime.datetime.now().strftime("%Y%m%d-%H%M")}/hparam_tuning'
+    datetime_now = datetime.datetime.now().strftime("%Y%m%d-%H%M")
+    return f'logs_{datetime_now}/hparam_tuning'
 
-
-def log_this_session(session_name: str) -> None:
+def log_session(session_name: str) -> None:
     """Creates log folder in root directory and sets up logfile structure for hparams view in tensorboard.
     """
     with tf.summary.create_file_writer(session_name).as_default():
@@ -127,7 +127,7 @@ def log_this_session(session_name: str) -> None:
                 get_hparam('num_units'),
                 get_hparam('num_layers'),
                 get_hparam('optimizer'),
-                get_hparam('lr'),
+                get_hparam('learning_rate'),
                 get_hparam('batch_size')
             ],
             metrics=[
@@ -148,7 +148,7 @@ def build_train_evaluate_one_neural_network(hparams, run_dir,
     model.compile(
         optimizer=create_optimizer_w_learning_rate(
             hparams["HP_OPTIMIZER"],
-            hparams["HP_LR"],
+            hparams["HP_LEARNING_RATE"],
         ),
         loss='BinaryCrossentropy',
         metrics=['accuracy'],
@@ -163,7 +163,7 @@ def build_train_evaluate_one_neural_network(hparams, run_dir,
                   tf.keras.callbacks.TensorBoard(
                       log_dir=run_dir + '_' + str(hparams["HP_NUM_LAYERS"]) +
                       'layers_' + str(hparams["HP_NUM_UNITS"]) + 'nodes_' +
-                      hparams["HP_OPTIMIZER"] + str(hparams["HP_LR"]) + '_' +
+                      hparams["HP_OPTIMIZER"] + str(hparams["HP_LEARNING_RATE"]) + '_' +
                       str(hparams["HP_BATCH_SIZE"]) + 'batchsize_',
                       histogram_freq=1)
               ],
@@ -174,7 +174,7 @@ def build_train_evaluate_one_neural_network(hparams, run_dir,
     return evalutation
 
 
-def log_and_run_one_hparams_combination(run_dir: str, hparams: Dict,
+def log_and_run_hparams_combination(run_dir: str, hparams: Dict,
                                         input_data: Dict[str, pd.DataFrame]):
     """Creates one subfolder in log directory and fills it with evaluation results after training the neural network with one hyper parameter setting.
     """
@@ -195,13 +195,13 @@ def tune_model(input_data: Dict[str, pd.DataFrame], log_name: str) -> None:
                 get_hparam('num_units').domain.values,
                 get_hparam('num_layers').domain.values,
                 get_hparam('optimizer').domain.values,
-                get_hparam('lr').domain.values,
-                get_hparam('batch_size').domain.values)):
+                get_hparam('learning_rate').domain.values,
+                get_hparam('batch_size').domain.values),desc="Tuning hyper parameters"):
         run_name = f'run-{session_num}'
-        log_and_run_one_hparams_combination(
-            log_name + run_name,
+        log_and_run_hparams_combination(
+            f'{log_name}_{run_name}',
             dict(
-                zip(("HP_NUM_UNITS", "HP_NUM_LAYERS", "HP_OPTIMIZER", "HP_LR",
+                zip(("HP_NUM_UNITS", "HP_NUM_LAYERS", "HP_OPTIMIZER", "HP_LEARNING_RATE",
                      "HP_BATCH_SIZE"), hparams_combination)), input_data)
         session_num += 1
 
@@ -221,7 +221,7 @@ def main() -> None:
                                                              y_col="rating",
                                                              x_cols=["year"])
     log_name = get_log_name_with_current_timestamp()
-    log_this_session(log_name)
+    log_session(log_name)
     tune_model(model_input_data, log_name)
     print_tensorboard_bash_command(log_name)
 

@@ -2,7 +2,7 @@
     "num_units" : [8,32],
     "num_layers" : [2],
     "optimizer" : ["adam"],
-    "lr" : [0.1, 0.001],
+    "learning_rate" : [0.1, 0.001],
     "batch_size" : [1],
     "metric_accuracy" : "accuracy",
     "epochs" : 3
