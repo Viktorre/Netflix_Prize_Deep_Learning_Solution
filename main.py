@@ -95,23 +95,23 @@ def scale_and_split_data_into_x_train_etc(
     }
 
 
-def create_optimizer_w_learning_rate(opt_name: str,
+def create_optimizer_w_learning_rate(optimizer_name: str,
                                      learning_rate: float) -> tf.keras.optimizers:
-    if opt_name == "sgd":
+    if optimizer_name == "sgd":
         return tf.keras.optimizers.SGD(learning_rate=learning_rate)
-    if opt_name == "adam":
+    if optimizer_name == "adam":
         return tf.keras.optimizers.Adam(learning_rate=learning_rate)
-    return "error"
+    raise ValueError(f'The given option "{optimizer_name}" is not defined.')
 
 
-def access_params_json() -> Dict:
+def load_json_params() -> Dict:
     return json.load(open("./model_parameters.json"))
 
 
 def get_hparam(parameter_name: str) -> hp:
     """Accesses model_parameters.json by arg parameter_name as dict key and returns respective value as tensorboard.plugins.hparams object."""
     return hp.HParam(parameter_name,
-                     hp.Discrete(access_params_json()[parameter_name]))
+                     hp.Discrete(load_json_params()[parameter_name]))
 
 
 def get_log_name_with_current_timestamp() -> str:
@@ -131,7 +131,7 @@ def log_session(session_name: str) -> None:
                 get_hparam('batch_size')
             ],
             metrics=[
-                hp.Metric(access_params_json()['metric_accuracy'],
+                hp.Metric(load_json_params()['metric_accuracy'],
                           display_name='Accuracy')
             ],
         )
@@ -156,7 +156,7 @@ def build_train_evaluate_one_neural_network(hparams, run_dir,
     model.fit(input_data["x_train"],
               input_data["y_train"],
               validation_data=(input_data["x_valid"], input_data["y_valid"]),
-              epochs=access_params_json()["epochs"],
+              epochs=load_json_params()["epochs"],
               shuffle=True,
               verbose=True,
               callbacks=[
@@ -179,10 +179,10 @@ def log_and_run_hparams_combination(run_dir: str, hparams: Dict,
     """Creates one subfolder in log directory and fills it with evaluation results after training the neural network with one hyper parameter setting.
     """
     with tf.summary.create_file_writer(run_dir).as_default():
-        hp.hparams(hparams)  # record the values used in this trial
+        hp.hparams(hparams)
         accuracy = build_train_evaluate_one_neural_network(
             hparams, run_dir, input_data)
-        tf.summary.scalar(access_params_json()["metric_accuracy"],
+        tf.summary.scalar(load_json_params()["metric_accuracy"],
                           accuracy,
                           step=1)
 
