@@ -40,22 +40,24 @@ def parse_and_join_data() -> pd.DataFrame:
     - ratings
     - (additional) info
     """
-    data = pd.read_csv(prepare_drive_link(os.getenv('url_short_main_file')),
-                       sep=',',
-                       na_values=[''],
-                       names=['user_id', 'rating', 'date'],
-                       dtype={
-                           'user_id': 'string',
-                           'rating': 'Int64',
-                           'date': 'string'
-                       })
+    combined_data_1 = pd.read_csv('combined_data_1.txt', sep=',', na_values=[''], on_bad_lines='warn', names=['user_id', 'rating', 'date'], dtype={ 'user_id': 'string', 'rating': 'Int64', 'date': 'string' })
+    combined_data_2 = pd.read_csv('combined_data_2.txt', sep=',', na_values=[''], on_bad_lines='warn', names=['user_id', 'rating', 'date'], dtype={ 'user_id': 'string', 'rating': 'Int64', 'date': 'string' })
+    combined_data_3 = pd.read_csv('combined_data_3.txt', sep=',', na_values=[''], on_bad_lines='warn', names=['user_id', 'rating', 'date'], dtype={ 'user_id': 'string', 'rating': 'Int64', 'date': 'string' })
+    combined_data_4 = pd.read_csv('combined_data_4.txt', sep=',', na_values=[''], on_bad_lines='warn', names=['user_id', 'rating', 'date'], dtype={ 'user_id': 'string', 'rating': 'Int64', 'date': 'string' })
+    data = pd.concat([combined_data_1,combined_data_2,combined_data_3,combined_data_4]).reset_index(drop=True)
     movie_data = pd.read_csv(
         prepare_drive_link(os.getenv('url_movie_info_file')),
         header=0,
     )[["movie_id", "year"]]
     data = format_movie_id_col_and_update_dtypes(data)
     data = data.merge(movie_data, on="movie_id")
+    
+    most_common_movies = data["movie_id"].value_counts().nlargest(17).index.values
+    most_common_users = data["user_id"].value_counts().nlargest(480).index.values
+    data_densed = data[(data["user_id"].isin(most_common_users))&(data["movie_id"].isin(most_common_movies))]
+    print(data_densed)
     return data
+# jetzt rausfinden wie loc machen unso dann testen wie viel nlargest, dann fkt und dann in git iwie rein...
 
 
 def show_dataframe(data: pd.DataFrame) -> None:
