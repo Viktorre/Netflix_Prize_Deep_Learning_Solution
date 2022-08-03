@@ -150,7 +150,7 @@ def helper_fct_return_optimizer_w_learn_rate(opt_name:str,lr:float):
         return tf.keras.optimizers.Adam(learning_rate=lr)
     return "error"
     
-def train_test_model(hparams,run_dir,preprocessing_head, inputs,HP_NUM_UNITS,HP_NUM_LAYERS,HP_OPTIMIZER,HP_LR,HP_BATCH_SIZE,METRIC_ACCURACY,x_train,y_train,x_valid,y_valid,x_test, y_test):
+def train_test_model(hparams,run_dir,preprocessing_head, inputs,HP_NUM_UNITS,HP_NUM_LAYERS,HP_OPTIMIZER,HP_LEARNING_RATE,HP_BATCH_SIZE,METRIC_ACCURACY,x_train,y_train,x_valid,y_valid,x_test, y_test):
     body = tf.keras.models.Sequential()
     for _ in range(int(hparams[HP_NUM_LAYERS])):
         body.add(tf.keras.layers.Dense(hparams[HP_NUM_UNITS]))
@@ -159,28 +159,27 @@ def train_test_model(hparams,run_dir,preprocessing_head, inputs,HP_NUM_UNITS,HP_
     result = body(preprocessed_inputs)
     model = tf.keras.Model(inputs, result)
     model.compile(
-        optimizer=helper_fct_return_optimizer_w_learn_rate(hparams[HP_OPTIMIZER],hparams[HP_LR],),
+        optimizer=helper_fct_return_optimizer_w_learn_rate(hparams[HP_OPTIMIZER],hparams[HP_LEARNING_RATE],),
         loss=tf.keras.losses.SparseCategoricalCrossentropy(), metrics=[METRIC_ACCURACY],)
-    model.fit(x_train, y_train,validation_data=(x_valid,y_valid),epochs=1, shuffle=True,verbose=True, callbacks=[ tf.keras.callbacks.TensorBoard(log_dir=run_dir+'_'+str(hparams[HP_NUM_LAYERS])+'layers_'+str(hparams[HP_NUM_UNITS])+'nodes_'+hparams[HP_OPTIMIZER]+str(hparams[HP_LR])+'_'+str(hparams[HP_BATCH_SIZE]), histogram_freq=1)],batch_size=(hparams[HP_BATCH_SIZE])) 
+    model.fit(x_train, y_train,validation_data=(x_valid,y_valid),epochs=1, shuffle=True,verbose=True, callbacks=[ tf.keras.callbacks.TensorBoard(log_dir=run_dir+'_'+str(hparams[HP_NUM_LAYERS])+'layers_'+str(hparams[HP_NUM_UNITS])+'nodes_'+hparams[HP_OPTIMIZER]+str(hparams[HP_LEARNING_RATE])+'_'+str(hparams[HP_BATCH_SIZE]), histogram_freq=1)],batch_size=(hparams[HP_BATCH_SIZE])) 
     _, accuracy = model.evaluate(x_test, y_test,verbose=False)
     return accuracy
 
 
-def run(run_dir, hparams, preprocessing_head, inputs, HP_NUM_UNITS,HP_NUM_LAYERS,HP_OPTIMIZER,HP_LR,HP_BATCH_SIZE,METRIC_ACCURACY,x_train,y_train,x_valid,y_valid,x_test, y_test):
+def run(run_dir, hparams, preprocessing_head, inputs, HP_NUM_UNITS,HP_NUM_LAYERS,HP_OPTIMIZER,HP_LEARNING_RATE,HP_BATCH_SIZE,METRIC_ACCURACY,x_train,y_train,x_valid,y_valid,x_test, y_test):
     hparams_dict_for_logging = hparams
     with tf.summary.create_file_writer(run_dir).as_default():
         hp.hparams(hparams_dict_for_logging)  # design bottle neck: this fct needs a dict that has all hparams as hp object as keys and the respective parameter value from the loop as value.
-        accuracy = train_test_model(hparams,run_dir, preprocessing_head, inputs,HP_NUM_UNITS,HP_NUM_LAYERS,HP_OPTIMIZER,HP_LR,HP_BATCH_SIZE,METRIC_ACCURACY,x_train,y_train,x_valid,y_valid,x_test, y_test)
+        accuracy = train_test_model(hparams,run_dir, preprocessing_head, inputs,HP_NUM_UNITS,HP_NUM_LAYERS,HP_OPTIMIZER,HP_LEARNING_RATE,HP_BATCH_SIZE,METRIC_ACCURACY,x_train,y_train,x_valid,y_valid,x_test, y_test)
         tf.summary.scalar(METRIC_ACCURACY, accuracy, step=1)
         
 def get_hparam_for_tuning() ->Tuple[hp.HParam]:
     HP_NUM_UNITS = hp.HParam('num_units', hp.Discrete([16,8]))
     HP_NUM_LAYERS = hp.HParam('num_layers', hp.Discrete([1]))
     HP_OPTIMIZER = hp.HParam('optimizer', hp.Discrete(['adam']))
-    HP_LR = hp.HParam('lr', hp.Discrete([0.001]))
+    HP_LEARNING_RATE = hp.HParam('lr', hp.Discrete([0.001]))
     HP_BATCH_SIZE = hp.HParam('batch_size', hp.Discrete([1]))
-    METRIC_ACCURACY = 'accuracy'
-    return HP_NUM_UNITS,HP_NUM_LAYERS,HP_OPTIMIZER,HP_LR,HP_BATCH_SIZE,METRIC_ACCURACY
+    return HP_NUM_UNITS,HP_NUM_LAYERS,HP_OPTIMIZER,HP_LEARNING_RATE,HP_BATCH_SIZE
 
 
 def main() -> None:
@@ -240,39 +239,27 @@ def main() -> None:
         x_test[col] = np.array(pd.DataFrame(rating_data_features_dict)[col][6200:].values)
     y_train, y_valid, y_test = rating_data_labels[:5000],rating_data_labels[5000:6200],   rating_data_labels[6200:]
     
-    HP_NUM_UNITS,HP_NUM_LAYERS,HP_OPTIMIZER,HP_LR,HP_BATCH_SIZE,METRIC_ACCURACY = get_hparam_for_tuning()
+    HP_NUM_UNITS, HP_NUM_LAYERS, HP_OPTIMIZER, HP_LEARNING_RATE, HP_BATCH_SIZE = get_hparam_for_tuning()
+    METRIC_ACCURACY = 'accuracy'
     log_name = 'logs_'+datetime.datetime.now().strftime("%Y%m%d-%H%M%S")+'/hparam_tuning'
 
     with tf.summary.create_file_writer(log_name).as_default():
         hp.hparams_config(
-            hparams=[HP_NUM_UNITS, HP_NUM_LAYERS, HP_OPTIMIZER, HP_LR, HP_BATCH_SIZE],
+            hparams=[HP_NUM_UNITS, HP_NUM_LAYERS, HP_OPTIMIZER, HP_LEARNING_RATE, HP_BATCH_SIZE],
             metrics=[hp.Metric(METRIC_ACCURACY, display_name='Accuracy')],
         )
-
-    session_num = 0
-    for num_units in tqdm(HP_NUM_UNITS.domain.values):
-        for num_layers in HP_NUM_LAYERS.domain.values:
-            for optimizer in HP_OPTIMIZER.domain.values:
-                for lr in HP_LR.domain.values:   
-                    for batch_size in HP_BATCH_SIZE.domain.values:
-                        hparams = {HP_NUM_UNITS: num_units,HP_NUM_LAYERS: num_layers, HP_OPTIMIZER: optimizer, HP_LR: lr, HP_BATCH_SIZE: batch_size }
-                        run_name = "run-%d" % session_num
-                        run(log_name+ run_name, hparams, rating_data_preprocessing, inputs, HP_NUM_UNITS,HP_NUM_LAYERS,HP_OPTIMIZER,HP_LR,HP_BATCH_SIZE,METRIC_ACCURACY,x_train,y_train,x_valid,y_valid,x_test, y_test)
-                        session_num += 1
-    # den loop noch weiter, vllt braucht tf log file writer dieses hparams objekt mit allen werten um hparams view in tb zu erzeugen...
-    # vlllt mit get hparams oder so das da mit rein...
     
-    # session_num = 0
-    # for hparams_combination in tqdm(product(
-    #         get_hparam('num_units').domain.values,
-    #         get_hparam('num_layers').domain.values,
-    #         get_hparam('optimizer').domain.values,
-    #         get_hparam('learning_rate').domain.values,
-    #         get_hparam('batch_size').domain.values),desc="Tuning hyper parameters"):
-    #     run_name = f'run-{session_num}'
-    #     hparams = dict( zip(("HP_NUM_UNITS", "HP_NUM_LAYERS", "HP_OPTIMIZER", "HP_LEARNING_RATE", "HP_BATCH_SIZE"), hparams_combination))
-    #     run( f'{log_name}_{run_name}', rating_data_preprocessing, inputs, HP_NUM_UNITS,HP_NUM_LAYERS,HP_OPTIMIZER,HP_LR,HP_BATCH_SIZE,METRIC_ACCURACY,x_train,y_train,x_valid,y_valid,x_test, y_test)
-    #     session_num += 1
+    session_num = 0
+    for hparams_combination in tqdm(product(
+            HP_NUM_UNITS.domain.values,
+            HP_NUM_LAYERS.domain.values,
+            HP_OPTIMIZER.domain.values,
+            HP_LEARNING_RATE.domain.values,
+            HP_BATCH_SIZE.domain.values),desc="Tuning hyper parameters"):
+        run_name = f'run-{session_num}'
+        hparams = dict( zip((HP_NUM_UNITS, HP_NUM_LAYERS, HP_OPTIMIZER, HP_LEARNING_RATE, HP_BATCH_SIZE), hparams_combination))
+        run( f'{log_name}_{run_name}', hparams,rating_data_preprocessing, inputs, HP_NUM_UNITS,HP_NUM_LAYERS,HP_OPTIMIZER,HP_LEARNING_RATE,HP_BATCH_SIZE,METRIC_ACCURACY,x_train,y_train,x_valid,y_valid,x_test, y_test)
+        session_num += 1
     
     
 if __name__ == "__main__":
