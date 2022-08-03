@@ -103,16 +103,18 @@ def create_optimizer_w_learning_rate(opt_name: str,
         return tf.keras.optimizers.Adam(learning_rate=learning_rate)
     return "error"
 
-
-def access_params_json() -> Dict:
+def load_json_param() -> Dict:
     return json.load(open("./model_parameters.json"))
 
-
-def get_hparam(parameter_name: str) -> hp:
+def get_hparam(parameter_name: str) -> hp.HParam:
     """Accesses model_parameters.json by arg parameter_name as dict key and returns respective value as tensorboard.plugins.hparams object."""
     return hp.HParam(parameter_name,
-                     hp.Discrete(access_params_json()[parameter_name]))
-
+                     hp.Discrete(load_json_param()[parameter_name]))
+       
+def get_all_hparams()->Tuple[hp.HParam]:
+    """Uses get_hparam() to get all parameters that are tuned in tune_model().
+    """    
+    return get_hparam('num_units'),get_hparam('num_layers'),get_hparam('optimizer'),get_hparam('learning_rate'),get_hparam('batch_size')
 
 def get_log_name_with_current_timestamp() -> str:
     datetime_now = datetime.datetime.now().strftime("%Y%m%d-%H%M")
@@ -123,19 +125,12 @@ def log_session(session_name: str) -> None:
     """
     with tf.summary.create_file_writer(session_name).as_default():
         hp.hparams_config(
-            hparams=[
-                get_hparam('num_units'),
-                get_hparam('num_layers'),
-                get_hparam('optimizer'),
-                get_hparam('learning_rate'),
-                get_hparam('batch_size')
-            ],
+            hparams=[*get_all_hparams()],
             metrics=[
-                hp.Metric(access_params_json()['metric_accuracy'],
+                hp.Metric(load_json_param()['metric_accuracy'],
                           display_name='Accuracy')
             ],
         )
-
 
 def print_tensorboard_bash_command(log_name: str) -> None:
     """Prints bash command for opening log file of current tuning run in browser. Highly recommended if many tuning parameters are run at once.
@@ -161,7 +156,7 @@ def train_test_model(hparams,run_dir,preprocessing_head, inputs,HP_NUM_UNITS,HP_
     model.compile(
         optimizer=helper_fct_return_optimizer_w_learn_rate(hparams[HP_OPTIMIZER],hparams[HP_LEARNING_RATE],),
         loss=tf.keras.losses.SparseCategoricalCrossentropy(), metrics=[METRIC_ACCURACY],)
-    model.fit(x_train, y_train,validation_data=(x_valid,y_valid),epochs=1, shuffle=True,verbose=True, callbacks=[ tf.keras.callbacks.TensorBoard(log_dir=run_dir+'_'+str(hparams[HP_NUM_LAYERS])+'layers_'+str(hparams[HP_NUM_UNITS])+'nodes_'+hparams[HP_OPTIMIZER]+str(hparams[HP_LEARNING_RATE])+'_'+str(hparams[HP_BATCH_SIZE]), histogram_freq=1)],batch_size=(hparams[HP_BATCH_SIZE])) 
+    model.fit(x_train, y_train,validation_data=(x_valid,y_valid),epochs=load_json_param()["epochs"], shuffle=True,verbose=True, callbacks=[ tf.keras.callbacks.TensorBoard(log_dir=run_dir+'_'+str(hparams[HP_NUM_LAYERS])+'layers_'+str(hparams[HP_NUM_UNITS])+'nodes_'+hparams[HP_OPTIMIZER]+str(hparams[HP_LEARNING_RATE])+'_'+str(hparams[HP_BATCH_SIZE]), histogram_freq=1)],batch_size=(hparams[HP_BATCH_SIZE])) 
     _, accuracy = model.evaluate(x_test, y_test,verbose=False)
     return accuracy
 
@@ -173,15 +168,21 @@ def run(run_dir, hparams, preprocessing_head, inputs, HP_NUM_UNITS,HP_NUM_LAYERS
         accuracy = train_test_model(hparams,run_dir, preprocessing_head, inputs,HP_NUM_UNITS,HP_NUM_LAYERS,HP_OPTIMIZER,HP_LEARNING_RATE,HP_BATCH_SIZE,METRIC_ACCURACY,x_train,y_train,x_valid,y_valid,x_test, y_test)
         tf.summary.scalar(METRIC_ACCURACY, accuracy, step=1)
         
-def get_hparam_for_tuning() ->Tuple[hp.HParam]:
-    HP_NUM_UNITS = hp.HParam('num_units', hp.Discrete([16,8]))
-    HP_NUM_LAYERS = hp.HParam('num_layers', hp.Discrete([1]))
-    HP_OPTIMIZER = hp.HParam('optimizer', hp.Discrete(['adam']))
-    HP_LEARNING_RATE = hp.HParam('lr', hp.Discrete([0.001]))
-    HP_BATCH_SIZE = hp.HParam('batch_size', hp.Discrete([1]))
-    return HP_NUM_UNITS,HP_NUM_LAYERS,HP_OPTIMIZER,HP_LEARNING_RATE,HP_BATCH_SIZE
-
-
+def tune_model(log_name,rating_data_preprocessing, inputs, HP_NUM_UNITS,HP_NUM_LAYERS,HP_OPTIMIZER,HP_LEARNING_RATE,HP_BATCH_SIZE,METRIC_ACCURACY,x_train,y_train,x_valid,y_valid,x_test, y_test) ->None:
+    session_num = 0
+    for hparams_combination in tqdm(product(
+            HP_NUM_UNITS.domain.values,
+            HP_NUM_LAYERS.domain.values,
+            HP_OPTIMIZER.domain.values,
+            HP_LEARNING_RATE.domain.values,
+            HP_BATCH_SIZE.domain.values),desc="Tuning hyper parameters"):
+        run_name = f'run-{session_num}'
+        hparams = dict( zip((HP_NUM_UNITS, HP_NUM_LAYERS, HP_OPTIMIZER, HP_LEARNING_RATE, HP_BATCH_SIZE), hparams_combination))
+        # hparams = dict( zip(get_all_hparams(), hparams_combination))
+        run( f'{log_name}_{run_name}', hparams,rating_data_preprocessing, inputs, HP_NUM_UNITS,HP_NUM_LAYERS,HP_OPTIMIZER,HP_LEARNING_RATE,HP_BATCH_SIZE,METRIC_ACCURACY,x_train,y_train,x_valid,y_valid,x_test, y_test)
+        session_num += 1
+        
+    
 def main() -> None:
     print("fun todo: refactor this, only then go back to normal data import!")
     load_dotenv('.env.md')
@@ -239,27 +240,10 @@ def main() -> None:
         x_test[col] = np.array(pd.DataFrame(rating_data_features_dict)[col][6200:].values)
     y_train, y_valid, y_test = rating_data_labels[:5000],rating_data_labels[5000:6200],   rating_data_labels[6200:]
     
-    HP_NUM_UNITS, HP_NUM_LAYERS, HP_OPTIMIZER, HP_LEARNING_RATE, HP_BATCH_SIZE = get_hparam_for_tuning()
-    METRIC_ACCURACY = 'accuracy'
     log_name = 'logs_'+datetime.datetime.now().strftime("%Y%m%d-%H%M%S")+'/hparam_tuning'
 
-    with tf.summary.create_file_writer(log_name).as_default():
-        hp.hparams_config(
-            hparams=[HP_NUM_UNITS, HP_NUM_LAYERS, HP_OPTIMIZER, HP_LEARNING_RATE, HP_BATCH_SIZE],
-            metrics=[hp.Metric(METRIC_ACCURACY, display_name='Accuracy')],
-        )
-    
-    session_num = 0
-    for hparams_combination in tqdm(product(
-            HP_NUM_UNITS.domain.values,
-            HP_NUM_LAYERS.domain.values,
-            HP_OPTIMIZER.domain.values,
-            HP_LEARNING_RATE.domain.values,
-            HP_BATCH_SIZE.domain.values),desc="Tuning hyper parameters"):
-        run_name = f'run-{session_num}'
-        hparams = dict( zip((HP_NUM_UNITS, HP_NUM_LAYERS, HP_OPTIMIZER, HP_LEARNING_RATE, HP_BATCH_SIZE), hparams_combination))
-        run( f'{log_name}_{run_name}', hparams,rating_data_preprocessing, inputs, HP_NUM_UNITS,HP_NUM_LAYERS,HP_OPTIMIZER,HP_LEARNING_RATE,HP_BATCH_SIZE,METRIC_ACCURACY,x_train,y_train,x_valid,y_valid,x_test, y_test)
-        session_num += 1
+    log_session(log_name)
+    tune_model(log_name,rating_data_preprocessing, inputs, *get_all_hparams(),load_json_param()['metric_accuracy'],x_train,y_train,x_valid,y_valid,x_test, y_test)
     
     
 if __name__ == "__main__":
