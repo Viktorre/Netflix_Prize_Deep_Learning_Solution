@@ -95,30 +95,36 @@ def scale_and_split_data_into_x_train_etc(
     }
 
 
-def create_optimizer_w_learning_rate(opt_name: str,
-                                     learning_rate: float) -> tf.keras.optimizers:
+def create_optimizer_w_learning_rate(
+        opt_name: str, learning_rate: float) -> tf.keras.optimizers:
     if opt_name == "sgd":
         return tf.keras.optimizers.SGD(learning_rate=learning_rate)
     if opt_name == "adam":
         return tf.keras.optimizers.Adam(learning_rate=learning_rate)
     return "error"
 
+
 def load_json_param() -> Dict:
     return json.load(open("./model_parameters.json"))
+
 
 def get_hparam(parameter_name: str) -> hp.HParam:
     """Accesses model_parameters.json by arg parameter_name as dict key and returns respective value as tensorboard.plugins.hparams object."""
     return hp.HParam(parameter_name,
                      hp.Discrete(load_json_param()[parameter_name]))
-       
-def get_all_hparams()->Tuple[hp.HParam]:
+
+
+def get_all_hparams() -> Tuple[hp.HParam]:
     """Uses get_hparam() to get all parameters that are tuned in tune_model().
-    """    
-    return get_hparam('num_units'),get_hparam('num_layers'),get_hparam('optimizer'),get_hparam('learning_rate'),get_hparam('batch_size')
+    """
+    return get_hparam('num_units'), get_hparam('num_layers'), get_hparam(
+        'optimizer'), get_hparam('learning_rate'), get_hparam('batch_size')
+
 
 def get_log_name_with_current_timestamp() -> str:
     datetime_now = datetime.datetime.now().strftime("%Y%m%d-%H%M")
     return f'logs_{datetime_now}/hparam_tuning'
+
 
 def log_session(session_name: str) -> None:
     """Creates log folder in root directory and sets up logfile structure for hparams view in tensorboard.
@@ -132,66 +138,108 @@ def log_session(session_name: str) -> None:
             ],
         )
 
+
 def print_tensorboard_bash_command(log_name: str) -> None:
     """Prints bash command for opening log file of current tuning run in browser. Highly recommended if many tuning parameters are run at once.
     """
     print("tensorboard --logdir " + log_name[:20] + " --port " +
           log_name[14:18])
 
-def helper_fct_return_optimizer_w_learn_rate(opt_name:str,lr:float):
+
+def helper_fct_return_optimizer_w_learn_rate(opt_name: str, lr: float):
     if opt_name == "sgd":
         return tf.keras.optimizers.SGD(learning_rate=lr)
     if opt_name == "adam":
         return tf.keras.optimizers.Adam(learning_rate=lr)
     return "error"
-    
-def train_test_model(hparams,run_dir,preprocessing_head, inputs,HP_NUM_UNITS,HP_NUM_LAYERS,HP_OPTIMIZER,HP_LEARNING_RATE,HP_BATCH_SIZE,METRIC_ACCURACY,x_train,y_train,x_valid,y_valid,x_test, y_test):
+
+
+def train_test_model(hparams_combination, run_dir, preprocessing_head, inputs,
+                     x_train, y_train, x_valid, y_valid, x_test, y_test):
+    hparams = dict(
+        zip(("HP_NUM_UNITS", "HP_NUM_LAYERS", "HP_OPTIMIZER",
+             "HP_LEARNING_RATE", "HP_BATCH_SIZE"), hparams_combination))
     body = tf.keras.models.Sequential()
-    for _ in range(int(hparams[HP_NUM_LAYERS])):
-        body.add(tf.keras.layers.Dense(hparams[HP_NUM_UNITS]))
+    for _ in range(int(hparams["HP_NUM_LAYERS"])):
+        body.add(tf.keras.layers.Dense(hparams["HP_NUM_UNITS"]))
     body.add(tf.keras.layers.Dense(5))
     preprocessed_inputs = preprocessing_head(inputs)
     result = body(preprocessed_inputs)
     model = tf.keras.Model(inputs, result)
     model.compile(
-        optimizer=helper_fct_return_optimizer_w_learn_rate(hparams[HP_OPTIMIZER],hparams[HP_LEARNING_RATE],),
-        loss=tf.keras.losses.SparseCategoricalCrossentropy(), metrics=[METRIC_ACCURACY],)
-    model.fit(x_train, y_train,validation_data=(x_valid,y_valid),epochs=load_json_param()["epochs"], shuffle=True,verbose=True, callbacks=[ tf.keras.callbacks.TensorBoard(log_dir=run_dir+'_'+str(hparams[HP_NUM_LAYERS])+'layers_'+str(hparams[HP_NUM_UNITS])+'nodes_'+hparams[HP_OPTIMIZER]+str(hparams[HP_LEARNING_RATE])+'_'+str(hparams[HP_BATCH_SIZE]), histogram_freq=1)],batch_size=(hparams[HP_BATCH_SIZE])) 
-    _, accuracy = model.evaluate(x_test, y_test,verbose=False)
+        optimizer=helper_fct_return_optimizer_w_learn_rate(
+            hparams["HP_OPTIMIZER"],
+            hparams["HP_LEARNING_RATE"],
+        ),
+        loss=tf.keras.losses.SparseCategoricalCrossentropy(),
+        metrics=[load_json_param()["metric_accuracy"]],
+    )
+    model.fit(
+        x_train,
+        y_train,
+        validation_data=(x_valid, y_valid),
+        epochs=load_json_param()["epochs"],
+        shuffle=True,
+        verbose=True,
+        callbacks=[
+            tf.keras.callbacks.TensorBoard(
+                log_dir=run_dir + '_' + str(hparams["HP_NUM_LAYERS"]) +
+                'layers_' + str(hparams["HP_NUM_UNITS"]) + 'nodes_' +
+                hparams["HP_OPTIMIZER"] + str(hparams["HP_LEARNING_RATE"]) +
+                '_' + str(hparams["HP_BATCH_SIZE"]),
+                histogram_freq=1)
+        ],
+        batch_size=(hparams["HP_BATCH_SIZE"]))
+    _, accuracy = model.evaluate(x_test, y_test, verbose=False)
     return accuracy
 
 
-def run(run_dir, hparams, preprocessing_head, inputs, HP_NUM_UNITS,HP_NUM_LAYERS,HP_OPTIMIZER,HP_LEARNING_RATE,HP_BATCH_SIZE,METRIC_ACCURACY,x_train,y_train,x_valid,y_valid,x_test, y_test):
-    hparams_dict_for_logging = hparams
+def run(run_dir, hparams_combination, preprocessing_head, inputs, x_train,
+        y_train, x_valid, y_valid, x_test, y_test):
+    HP_NUM_UNITS, HP_NUM_LAYERS, HP_OPTIMIZER, HP_LEARNING_RATE, HP_BATCH_SIZE = get_all_hparams(
+    )
+    hparams_for_logging = dict(
+        zip((HP_NUM_UNITS, HP_NUM_LAYERS, HP_OPTIMIZER, HP_LEARNING_RATE,
+             HP_BATCH_SIZE), hparams_combination))
     with tf.summary.create_file_writer(run_dir).as_default():
-        hp.hparams(hparams_dict_for_logging)  # design bottle neck: this fct needs a dict that has all hparams as hp object as keys and the respective parameter value from the loop as value.
-        accuracy = train_test_model(hparams,run_dir, preprocessing_head, inputs,HP_NUM_UNITS,HP_NUM_LAYERS,HP_OPTIMIZER,HP_LEARNING_RATE,HP_BATCH_SIZE,METRIC_ACCURACY,x_train,y_train,x_valid,y_valid,x_test, y_test)
-        tf.summary.scalar(METRIC_ACCURACY, accuracy, step=1)
-        
-def tune_model(log_name,rating_data_preprocessing, inputs,x_train,y_train,x_valid,y_valid,x_test, y_test) ->None:
+        hp.hparams(
+            hparams_for_logging
+        )  # design bottle neck: this fct needs a dict that has all hparams as hp object as keys and the respective parameter value from the loop as value.
+        accuracy = train_test_model(hparams_combination, run_dir,
+                                    preprocessing_head, inputs, x_train,
+                                    y_train, x_valid, y_valid, x_test, y_test)
+        tf.summary.scalar(load_json_param()["metric_accuracy"],
+                          accuracy,
+                          step=1)
+
+
+def tune_model(log_name, rating_data_preprocessing, inputs, x_train, y_train,
+               x_valid, y_valid, x_test, y_test) -> None:
     session_num = 0
-    HP_NUM_UNITS, HP_NUM_LAYERS, HP_OPTIMIZER, HP_LEARNING_RATE, HP_BATCH_SIZE = get_all_hparams()
     for hparams_combination in tqdm(product(
-                get_hparam('num_units').domain.values,
-                get_hparam('num_layers').domain.values,
-                get_hparam('optimizer').domain.values,
-                get_hparam('learning_rate').domain.values,
-                get_hparam('batch_size').domain.values),desc="Tuning hyper parameters"):
+            get_hparam('num_units').domain.values,
+            get_hparam('num_layers').domain.values,
+            get_hparam('optimizer').domain.values,
+            get_hparam('learning_rate').domain.values,
+            get_hparam('batch_size').domain.values),
+                                    desc="Tuning hyper parameters"):
         run_name = f'run-{session_num}'
-        # problem: hparam objecdt scheint einen timestamp oder memory alloc haben was es immer unique macht, erstmal hparam dict mit keys so tief definiren wies geht, dann evtl in hparms fuer model und fuer logging trennen...
-        hparams = dict(zip((HP_NUM_UNITS, HP_NUM_LAYERS, HP_OPTIMIZER, HP_LEARNING_RATE, HP_BATCH_SIZE), hparams_combination))
-        run( f'{log_name}_{run_name}', hparams,rating_data_preprocessing, inputs, HP_NUM_UNITS,HP_NUM_LAYERS,HP_OPTIMIZER,HP_LEARNING_RATE,HP_BATCH_SIZE,load_json_param()["metric_accuracy"],x_train,y_train,x_valid,y_valid,x_test, y_test)
+        run(f'{log_name}_{run_name}', hparams_combination,
+            rating_data_preprocessing, inputs, x_train, y_train, x_valid,
+            y_valid, x_test, y_test)
         session_num += 1
-        
-    
+
+
 def main() -> None:
     print("fun todo: refactor this, only then go back to normal data import!")
     load_dotenv('.env.md')
-    rating_data = pd.read_pickle("C:/Users/reifv/root/Heidelberg Master/Netflix_AI_codes/data_densed_7557rows.pkl")
+    rating_data = pd.read_pickle(
+        "C:/Users/reifv/root/Heidelberg Master/Netflix_AI_codes/data_densed_7557rows.pkl"
+    )
     show_dataframe(rating_data)
 
-    rating_data['rating'] -=1
-    rating_data = rating_data.astype({ 'movie_id': 'str', 'user_id': 'str' })
+    rating_data['rating'] -= 1
+    rating_data = rating_data.astype({'movie_id': 'str', 'user_id': 'str'})
     rating_data.pop("date")
     rating_data_features = rating_data.copy()
     rating_data_labels = rating_data_features.pop('rating')
@@ -203,11 +251,12 @@ def main() -> None:
             dtype = tf.string
         else:
             dtype = tf.float32
-        inputs[name] = tf.keras.Input(shape=(1,), name=name, dtype=dtype)
+        inputs[name] = tf.keras.Input(shape=(1, ), name=name, dtype=dtype)
 
-
-    numeric_inputs = {name:input for name,input in inputs.items()
-                    if input.dtype==tf.float32}
+    numeric_inputs = {
+        name: input
+        for name, input in inputs.items() if input.dtype == tf.float32
+    }
 
     x = tf.keras.layers.Concatenate()(list(numeric_inputs.values()))
     norm = tf.keras.layers.Normalization()
@@ -218,34 +267,48 @@ def main() -> None:
     for name, input in inputs.items():
         if input.dtype == tf.float32:
             continue
-        lookup = tf.keras.layers.StringLookup(vocabulary=np.unique(rating_data_features[name]))
-        one_hot = tf.keras.layers.CategoryEncoding(num_tokens=lookup.vocabulary_size())
+        lookup = tf.keras.layers.StringLookup(
+            vocabulary=np.unique(rating_data_features[name]))
+        one_hot = tf.keras.layers.CategoryEncoding(
+            num_tokens=lookup.vocabulary_size())
         x = lookup(input)
         x = one_hot(x)
         preprocessed_inputs.append(x)
 
-    preprocessed_inputs_cat = tf.keras.layers.Concatenate()(preprocessed_inputs)
+    preprocessed_inputs_cat = tf.keras.layers.Concatenate()(
+        preprocessed_inputs)
 
     rating_data_preprocessing = tf.keras.Model(inputs, preprocessed_inputs_cat)
 
-    rating_data_features_dict = {name: np.array(value) 
-                            for name, value in rating_data_features.items()}
-    features_dict = {name:values[:1] for name, values in rating_data_features_dict.items()}
+    rating_data_features_dict = {
+        name: np.array(value)
+        for name, value in rating_data_features.items()
+    }
+    features_dict = {
+        name: values[:1]
+        for name, values in rating_data_features_dict.items()
+    }
 
     rating_data_preprocessing(features_dict)
-    
+
     x_train, x_valid, x_test = {}, {}, {}
     for col in pd.DataFrame(rating_data_features_dict):
-        x_train[col] = np.array(pd.DataFrame(rating_data_features_dict)[col][:5000].values)
-        x_valid[col] = np.array(pd.DataFrame(rating_data_features_dict)[col][5000:6200].values)
-        x_test[col] = np.array(pd.DataFrame(rating_data_features_dict)[col][6200:].values)
-    y_train, y_valid, y_test = rating_data_labels[:5000],rating_data_labels[5000:6200],   rating_data_labels[6200:]
-    
-    log_name = 'logs_'+datetime.datetime.now().strftime("%Y%m%d-%H%M%S")+'/hparam_tuning'
+        x_train[col] = np.array(
+            pd.DataFrame(rating_data_features_dict)[col][:5000].values)
+        x_valid[col] = np.array(
+            pd.DataFrame(rating_data_features_dict)[col][5000:6200].values)
+        x_test[col] = np.array(
+            pd.DataFrame(rating_data_features_dict)[col][6200:].values)
+    y_train, y_valid, y_test = rating_data_labels[:5000], rating_data_labels[
+        5000:6200], rating_data_labels[6200:]
+
+    log_name = 'logs_' + datetime.datetime.now().strftime(
+        "%Y%m%d-%H%M%S") + '/hparam_tuning'
 
     log_session(log_name)
-    tune_model(log_name,rating_data_preprocessing, inputs,x_train,y_train,x_valid,y_valid,x_test, y_test)
-    
-    
+    tune_model(log_name, rating_data_preprocessing, inputs, x_train, y_train,
+               x_valid, y_valid, x_test, y_test)
+
+
 if __name__ == "__main__":
     main()
