@@ -168,18 +168,19 @@ def run(run_dir, hparams, preprocessing_head, inputs, HP_NUM_UNITS,HP_NUM_LAYERS
         accuracy = train_test_model(hparams,run_dir, preprocessing_head, inputs,HP_NUM_UNITS,HP_NUM_LAYERS,HP_OPTIMIZER,HP_LEARNING_RATE,HP_BATCH_SIZE,METRIC_ACCURACY,x_train,y_train,x_valid,y_valid,x_test, y_test)
         tf.summary.scalar(METRIC_ACCURACY, accuracy, step=1)
         
-def tune_model(log_name,rating_data_preprocessing, inputs, HP_NUM_UNITS,HP_NUM_LAYERS,HP_OPTIMIZER,HP_LEARNING_RATE,HP_BATCH_SIZE,METRIC_ACCURACY,x_train,y_train,x_valid,y_valid,x_test, y_test) ->None:
+def tune_model(log_name,rating_data_preprocessing, inputs,x_train,y_train,x_valid,y_valid,x_test, y_test) ->None:
     session_num = 0
+    HP_NUM_UNITS, HP_NUM_LAYERS, HP_OPTIMIZER, HP_LEARNING_RATE, HP_BATCH_SIZE = get_all_hparams()
     for hparams_combination in tqdm(product(
-            HP_NUM_UNITS.domain.values,
-            HP_NUM_LAYERS.domain.values,
-            HP_OPTIMIZER.domain.values,
-            HP_LEARNING_RATE.domain.values,
-            HP_BATCH_SIZE.domain.values),desc="Tuning hyper parameters"):
+                get_hparam('num_units').domain.values,
+                get_hparam('num_layers').domain.values,
+                get_hparam('optimizer').domain.values,
+                get_hparam('learning_rate').domain.values,
+                get_hparam('batch_size').domain.values),desc="Tuning hyper parameters"):
         run_name = f'run-{session_num}'
-        hparams = dict( zip((HP_NUM_UNITS, HP_NUM_LAYERS, HP_OPTIMIZER, HP_LEARNING_RATE, HP_BATCH_SIZE), hparams_combination))
-        # hparams = dict( zip(get_all_hparams(), hparams_combination))
-        run( f'{log_name}_{run_name}', hparams,rating_data_preprocessing, inputs, HP_NUM_UNITS,HP_NUM_LAYERS,HP_OPTIMIZER,HP_LEARNING_RATE,HP_BATCH_SIZE,METRIC_ACCURACY,x_train,y_train,x_valid,y_valid,x_test, y_test)
+        # problem: hparam objecdt scheint einen timestamp oder memory alloc haben was es immer unique macht, erstmal hparam dict mit keys so tief definiren wies geht, dann evtl in hparms fuer model und fuer logging trennen...
+        hparams = dict(zip((HP_NUM_UNITS, HP_NUM_LAYERS, HP_OPTIMIZER, HP_LEARNING_RATE, HP_BATCH_SIZE), hparams_combination))
+        run( f'{log_name}_{run_name}', hparams,rating_data_preprocessing, inputs, HP_NUM_UNITS,HP_NUM_LAYERS,HP_OPTIMIZER,HP_LEARNING_RATE,HP_BATCH_SIZE,load_json_param()["metric_accuracy"],x_train,y_train,x_valid,y_valid,x_test, y_test)
         session_num += 1
         
     
@@ -243,7 +244,7 @@ def main() -> None:
     log_name = 'logs_'+datetime.datetime.now().strftime("%Y%m%d-%H%M%S")+'/hparam_tuning'
 
     log_session(log_name)
-    tune_model(log_name,rating_data_preprocessing, inputs, *get_all_hparams(),load_json_param()['metric_accuracy'],x_train,y_train,x_valid,y_valid,x_test, y_test)
+    tune_model(log_name,rating_data_preprocessing, inputs,x_train,y_train,x_valid,y_valid,x_test, y_test)
     
     
 if __name__ == "__main__":
