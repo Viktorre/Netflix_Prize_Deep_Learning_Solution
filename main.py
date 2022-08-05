@@ -75,14 +75,15 @@ def get_and_scale_x(data: pd.DataFrame, x_cols: List[str]) -> pd.DataFrame:
 
 
 def turn_pandas_df_into_dict_of_np_arrays_of_selected_columns(
-        data: pd.DataFrame, cols: List[str]) -> Dict[str,np.array]:
+        data: pd.DataFrame, cols: List[str]) -> Dict[str, np.array]:
     return_dict = {}
     for col in cols:
         return_dict[col] = np.array(pd.DataFrame(data)[col].values)
     return return_dict
 
+
 def split_data_into_x_train_etc(data: pd.DataFrame, y_col: str,
-                                x_cols: List[str]) -> Dict[str, pd.DataFrame]:
+                                x_cols: List[str]) -> Dict[str, np.array]:
     """Extracts training, validation and test data from the main dataframe. All x-variables are normalized between -1 and 1.
     """
     train_data, temp_test_data = train_test_split(data,
@@ -92,12 +93,21 @@ def split_data_into_x_train_etc(data: pd.DataFrame, y_col: str,
                                              test_size=0.5,
                                              random_state=42)
     return {
-        "x_train": turn_pandas_df_into_dict_of_np_arrays_of_selected_columns(train_data,x_cols),
-        "x_valid": turn_pandas_df_into_dict_of_np_arrays_of_selected_columns(valid_data,x_cols),
-        "x_test": turn_pandas_df_into_dict_of_np_arrays_of_selected_columns(test_data,x_cols),
-        "y_train": train_data[y_col],
-        "y_valid": valid_data[y_col],
-        "y_test": test_data[y_col]
+        "x_train":
+        turn_pandas_df_into_dict_of_np_arrays_of_selected_columns(
+            train_data, x_cols),
+        "x_valid":
+        turn_pandas_df_into_dict_of_np_arrays_of_selected_columns(
+            valid_data, x_cols),
+        "x_test":
+        turn_pandas_df_into_dict_of_np_arrays_of_selected_columns(
+            test_data, x_cols),
+        "y_train":
+        train_data[y_col],
+        "y_valid":
+        valid_data[y_col],
+        "y_test":
+        test_data[y_col]
     }
 
 
@@ -160,8 +170,8 @@ def helper_fct_return_optimizer_w_learn_rate(opt_name: str, lr: float):
     return "error"
 
 
-def train_test_model(hparams_combination, run_dir, preprocessing_head, inputs,
-                     tuning_input_data):
+def train_test_model(hparams_combination, run_dir, tuning_input_data,
+                     raw_data):
     hparams = dict(
         zip(("HP_NUM_UNITS", "HP_NUM_LAYERS", "HP_OPTIMIZER",
              "HP_LEARNING_RATE", "HP_BATCH_SIZE"), hparams_combination))
@@ -169,9 +179,12 @@ def train_test_model(hparams_combination, run_dir, preprocessing_head, inputs,
     for _ in range(int(hparams["HP_NUM_LAYERS"])):
         body.add(tf.keras.layers.Dense(hparams["HP_NUM_UNITS"]))
     body.add(tf.keras.layers.Dense(5))
-    preprocessed_inputs = preprocessing_head(inputs)
+    input_tensors = create_input_tensors(raw_data)
+    preprocessing_head = create_preprocessing_for_model(
+        raw_data, input_tensors)
+    preprocessed_inputs = preprocessing_head(input_tensors)
     result = body(preprocessed_inputs)
-    model = tf.keras.Model(inputs, result)
+    model = tf.keras.Model(input_tensors, result)
     model.compile(
         optimizer=helper_fct_return_optimizer_w_learn_rate(
             hparams["HP_OPTIMIZER"],
@@ -183,7 +196,8 @@ def train_test_model(hparams_combination, run_dir, preprocessing_head, inputs,
     model.fit(
         tuning_input_data["x_train"],
         tuning_input_data["y_train"],
-        validation_data=(tuning_input_data["x_valid"], tuning_input_data["y_valid"]),
+        validation_data=(tuning_input_data["x_valid"],
+                         tuning_input_data["y_valid"]),
         epochs=load_json_param()["epochs"],
         shuffle=True,
         verbose=True,
@@ -196,22 +210,26 @@ def train_test_model(hparams_combination, run_dir, preprocessing_head, inputs,
                 histogram_freq=1)
         ],
         batch_size=(hparams["HP_BATCH_SIZE"]))
-    _, accuracy = model.evaluate(tuning_input_data["x_test"], tuning_input_data["y_test"], verbose=False)
+    _, accuracy = model.evaluate(tuning_input_data["x_test"],
+                                 tuning_input_data["y_test"],
+                                 verbose=False)
     return accuracy
 
 
-def run(run_dir, hparams_combination, preprocessing_head, inputs, tuning_input_data):
+def run(run_dir: str, hparams_combination: Tuple[int], tuning_input_data:Dict[str, np.array],
+        raw_data:pd.DataFrame) -> None:
     hparams_for_logging = dict(zip((get_all_hparams()), hparams_combination))
     with tf.summary.create_file_writer(run_dir).as_default():
         hp.hparams(hparams_for_logging)
         accuracy = train_test_model(hparams_combination, run_dir,
-                                    preprocessing_head, inputs, tuning_input_data)
+                                    tuning_input_data, raw_data)
         tf.summary.scalar(load_json_param()["metric_accuracy"],
                           accuracy,
                           step=1)
 
 
-def tune_model(log_name, rating_data_preprocessing, inputs, tuning_input_data) -> None:
+def tune_model(log_name: str, tuning_input_data,
+               raw_data: pd.DataFrame) -> None:
     session_num = 0
     for hparams_combination in tqdm(product(
             get_hparam('num_units').domain.values,
@@ -221,15 +239,14 @@ def tune_model(log_name, rating_data_preprocessing, inputs, tuning_input_data) -
             get_hparam('batch_size').domain.values),
                                     desc="Tuning hyper parameters"):
         run_name = f'run-{session_num}'
-        run(f'{log_name}_{run_name}', hparams_combination,
-            rating_data_preprocessing, inputs, tuning_input_data)
+        run(f'{log_name}_{run_name}', hparams_combination, tuning_input_data,
+            raw_data)
         session_num += 1
 
-def create_input_tensors(data:pd.DataFrame) ->Dict:
-    data_features = data.copy()
-    data_labels = data_features.pop('rating')
+
+def create_input_tensors(data: pd.DataFrame) -> Dict:
     inputs = {}
-    for name, column in  data_features.items():
+    for name, column in data.drop('rating', axis=1).items():
         dtype = column.dtype
         if dtype == object:
             dtype = tf.string
@@ -238,46 +255,41 @@ def create_input_tensors(data:pd.DataFrame) ->Dict:
         inputs[name] = tf.keras.Input(shape=(1, ), name=name, dtype=dtype)
     return inputs
 
+
 # def create_preprocessing_for_model(data:pd.DataFrame) ->Tuple[tf.keras.engine.functional.Functional,Dict[str,tf.keras.engine.keras_tensor.KerasTensor]]: #tpye hint issue here!
-def create_preprocessing_for_model(data:pd.DataFrame,inputs:Dict):
-    data_features = data.copy()
-    data_labels = data_features.pop('rating')
+def create_preprocessing_for_model(data: pd.DataFrame, inputs: Dict):
+    """Creates preprocessing object which is...?
+    """    
     numeric_inputs = {
         name: input
         for name, input in inputs.items() if input.dtype == tf.float32
     }
-    x = tf.keras.layers.Concatenate()(list(numeric_inputs.values()))
+    tensor_numeric_inputs = tf.keras.layers.Concatenate()(list(numeric_inputs.values()))
     norm = tf.keras.layers.Normalization()
     norm.adapt(np.array(data[numeric_inputs.keys()]))
-    all_numeric_inputs = norm(x)
+    all_numeric_inputs = norm(tensor_numeric_inputs)
     preprocessed_inputs = [all_numeric_inputs]
     for name, input in inputs.items():
         if input.dtype == tf.float32:
             continue
         lookup = tf.keras.layers.StringLookup(
-            vocabulary=np.unique(data_features[name]))
+            vocabulary=np.unique(data.drop('rating', axis=1)[name]))
         one_hot = tf.keras.layers.CategoryEncoding(
             num_tokens=lookup.vocabulary_size())
-        x = lookup(input)
-        x = one_hot(x)
-        preprocessed_inputs.append(x)
-
+        preprocessed_inputs.append(one_hot(lookup(input)))
     preprocessed_inputs_cat = tf.keras.layers.Concatenate()(
         preprocessed_inputs)
 
     data_preprocessing = tf.keras.Model(inputs, preprocessed_inputs_cat)
-
     data_features_dict = {
         name: np.array(value)
-        for name, value in data_features.items()
+        for name, value in data.drop('rating', axis=1).items()
     }
     features_dict = {
         name: values[:1]
         for name, values in data_features_dict.items()
     }
-
     data_preprocessing(features_dict)
-
     return data_preprocessing
 
 
@@ -288,19 +300,19 @@ def main() -> None:
     )
     show_dataframe(rating_data)
 
-    rating_data['rating'] -= 1 #these 3 lines will be merged into parse...() fct or somewhere else
+    rating_data[
+        'rating'] -= 1  #these 3 lines will be merged into parse...() fct or somewhere else
     rating_data = rating_data.astype({'movie_id': 'str', 'user_id': 'str'})
     rating_data.pop("date")
-    
-    input_tensors = create_input_tensors(rating_data)
-    rating_data_preprocessing = create_preprocessing_for_model(rating_data,input_tensors)
+
     model_input_data = split_data_into_x_train_etc(
         rating_data, y_col="rating", x_cols=["user_id", "movie_id", "year"])
     log_name = 'logs_' + datetime.datetime.now().strftime(
         "%Y%m%d-%H%M%S") + '/hparam_tuning'
     log_session(log_name)
-    tune_model(log_name, rating_data_preprocessing, input_tensors, model_input_data)
+    tune_model(log_name, model_input_data, rating_data)
 
 
 if __name__ == "__main__":
     main()
+#later split train model into build model und dann fit model...
