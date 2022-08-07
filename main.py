@@ -170,11 +170,7 @@ def helper_fct_return_optimizer_w_learn_rate(opt_name: str, lr: float):
     return "error"
 
 
-def train_test_model(hparams_combination, run_dir, tuning_input_data,
-                     raw_data):
-    hparams = dict(
-        zip(("HP_NUM_UNITS", "HP_NUM_LAYERS", "HP_OPTIMIZER",
-             "HP_LEARNING_RATE", "HP_BATCH_SIZE"), hparams_combination))
+def build_model(hparams: Dict[str, int], raw_data: pd.DataFrame) -> float:
     body = tf.keras.models.Sequential()
     for _ in range(int(hparams["HP_NUM_LAYERS"])):
         body.add(tf.keras.layers.Dense(hparams["HP_NUM_UNITS"]))
@@ -193,6 +189,11 @@ def train_test_model(hparams_combination, run_dir, tuning_input_data,
         loss=tf.keras.losses.SparseCategoricalCrossentropy(),
         metrics=[load_json_param()["metric_accuracy"]],
     )
+    return model
+
+
+def train_model(hparams: Dict[str, int], run_dir: str,
+                tuning_input_data: Dict[str, np.array], model) -> float:
     model.fit(
         tuning_input_data["x_train"],
         tuning_input_data["y_train"],
@@ -210,26 +211,13 @@ def train_test_model(hparams_combination, run_dir, tuning_input_data,
                 histogram_freq=1)
         ],
         batch_size=(hparams["HP_BATCH_SIZE"]))
-    _, accuracy = model.evaluate(tuning_input_data["x_test"],
-                                 tuning_input_data["y_test"],
-                                 verbose=False)
-    return accuracy
+    return model
 
 
-def run(run_dir: str, hparams_combination: Tuple[int], tuning_input_data:Dict[str, np.array],
-        raw_data:pd.DataFrame) -> None:
-    hparams_for_logging = dict(zip((get_all_hparams()), hparams_combination))
-    with tf.summary.create_file_writer(run_dir).as_default():
-        hp.hparams(hparams_for_logging)
-        accuracy = train_test_model(hparams_combination, run_dir,
-                                    tuning_input_data, raw_data)
-        tf.summary.scalar(load_json_param()["metric_accuracy"],
-                          accuracy,
-                          step=1)
-
-
-def tune_model(log_name: str, tuning_input_data,
+def tune_model(log_name: str, tuning_input_data: Dict[str, np.array],
                raw_data: pd.DataFrame) -> None:
+    """"Loops through hparam combinations. For each combination it trains the ANN and logs its metrics in two ways: Training and evaluation is logged in train_model(). Testing is logged separately afterwards. Both can be seen in tensorboard.
+    """
     session_num = 0
     for hparams_combination in tqdm(product(
             get_hparam('num_units').domain.values,
@@ -238,9 +226,19 @@ def tune_model(log_name: str, tuning_input_data,
             get_hparam('learning_rate').domain.values,
             get_hparam('batch_size').domain.values),
                                     desc="Tuning hyper parameters"):
-        run_name = f'run-{session_num}'
-        run(f'{log_name}_{run_name}', hparams_combination, tuning_input_data,
-            raw_data)
+        hparams = dict(
+            zip(("HP_NUM_UNITS", "HP_NUM_LAYERS", "HP_OPTIMIZER",
+                 "HP_LEARNING_RATE", "HP_BATCH_SIZE"), hparams_combination))
+        run_dir = f'{log_name}_run-{session_num}'
+        with tf.summary.create_file_writer(run_dir).as_default():
+            hp.hparams(dict(zip((get_all_hparams()), hparams_combination)))
+            model = train_model(hparams, run_dir, tuning_input_data,
+                                build_model(hparams, raw_data))
+            tf.summary.scalar(load_json_param()["metric_accuracy"],
+                              model.evaluate(tuning_input_data["x_test"],
+                                             tuning_input_data["y_test"],
+                                             verbose=False)[1],
+                              step=1)
         session_num += 1
 
 
@@ -259,12 +257,13 @@ def create_input_tensors(data: pd.DataFrame) -> Dict:
 # def create_preprocessing_for_model(data:pd.DataFrame) ->Tuple[tf.keras.engine.functional.Functional,Dict[str,tf.keras.engine.keras_tensor.KerasTensor]]: #tpye hint issue here!
 def create_preprocessing_for_model(data: pd.DataFrame, inputs: Dict):
     """Creates preprocessing object which is...?
-    """    
+    """
     numeric_inputs = {
         name: input
         for name, input in inputs.items() if input.dtype == tf.float32
     }
-    tensor_numeric_inputs = tf.keras.layers.Concatenate()(list(numeric_inputs.values()))
+    tensor_numeric_inputs = tf.keras.layers.Concatenate()(list(
+        numeric_inputs.values()))
     norm = tf.keras.layers.Normalization()
     norm.adapt(np.array(data[numeric_inputs.keys()]))
     all_numeric_inputs = norm(tensor_numeric_inputs)
@@ -279,7 +278,6 @@ def create_preprocessing_for_model(data: pd.DataFrame, inputs: Dict):
         preprocessed_inputs.append(one_hot(lookup(input)))
     preprocessed_inputs_cat = tf.keras.layers.Concatenate()(
         preprocessed_inputs)
-
     data_preprocessing = tf.keras.Model(inputs, preprocessed_inputs_cat)
     data_features_dict = {
         name: np.array(value)
@@ -315,4 +313,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-#later split train model into build model und dann fit model...
+# preprocessing noch weiter refactoren!
