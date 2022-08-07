@@ -254,13 +254,12 @@ def create_input_tensors(data: pd.DataFrame) -> Dict:
     return inputs
 
 
-# def create_preprocessing_for_model(data:pd.DataFrame) ->Tuple[tf.keras.engine.functional.Functional,Dict[str,tf.keras.engine.keras_tensor.KerasTensor]]: #tpye hint issue here!
-def create_preprocessing_for_model(data: pd.DataFrame, inputs: Dict):
-    """Creates preprocessing object which is...?
-    """
+def preprocess_and_concatenate_tensors(data: pd.DataFrame, input_tensors: Dict):
+    """to do...
+    """    
     numeric_inputs = {
         name: input
-        for name, input in inputs.items() if input.dtype == tf.float32
+        for name, input in input_tensors.items() if input.dtype == tf.float32
     }
     tensor_numeric_inputs = tf.keras.layers.Concatenate()(list(
         numeric_inputs.values()))
@@ -268,17 +267,22 @@ def create_preprocessing_for_model(data: pd.DataFrame, inputs: Dict):
     norm.adapt(np.array(data[numeric_inputs.keys()]))
     all_numeric_inputs = norm(tensor_numeric_inputs)
     preprocessed_inputs = [all_numeric_inputs]
-    for name, input in inputs.items():
-        if input.dtype == tf.float32:
+    for name, tensor in input_tensors.items():
+        if tensor.dtype == tf.float32:
             continue
         lookup = tf.keras.layers.StringLookup(
             vocabulary=np.unique(data.drop('rating', axis=1)[name]))
         one_hot = tf.keras.layers.CategoryEncoding(
             num_tokens=lookup.vocabulary_size())
-        preprocessed_inputs.append(one_hot(lookup(input)))
-    preprocessed_inputs_cat = tf.keras.layers.Concatenate()(
-        preprocessed_inputs)
-    data_preprocessing = tf.keras.Model(inputs, preprocessed_inputs_cat)
+        preprocessed_inputs.append(one_hot(lookup(tensor)))
+    return  tf.keras.layers.Concatenate()(preprocessed_inputs)
+
+# def create_preprocessing_for_model(data:pd.DataFrame) ->Tuple[tf.keras.engine.functional.Functional,Dict[str,tf.keras.engine.keras_tensor.KerasTensor]]: #tpye hint issue here!
+def create_preprocessing_for_model(data: pd.DataFrame, input_tensors: Dict):
+    """Creates preprocessing object which is...?
+    """
+    preprocessed_inputs_concatenated = preprocess_and_concatenate_tensors(data,input_tensors)
+    data_preprocessing = tf.keras.Model(input_tensors, preprocessed_inputs_concatenated)
     data_features_dict = {
         name: np.array(value)
         for name, value in data.drop('rating', axis=1).items()
@@ -313,4 +317,5 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-# preprocessing noch weiter refactoren!
+# preprocessing noch weiter refactoren! vllt numeric und non numeric inputs noch trennen... immer an single resp denken...
+# nach prepro falls nichts anderes mehr datenimport auf normal und dann pr!
