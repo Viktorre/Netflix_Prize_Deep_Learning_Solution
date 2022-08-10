@@ -1,6 +1,7 @@
 import datetime
 from dotenv import load_dotenv
 import json
+import keras
 import numpy as np
 import os
 import pandas as pd
@@ -9,7 +10,6 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split
 from tensorboard.plugins.hparams import api as hp
 import tensorflow as tf
-import time
 from tqdm import tqdm
 from typing import Dict, List, Tuple
 
@@ -111,15 +111,6 @@ def split_data_into_x_train_etc(data: pd.DataFrame, y_col: str,
     }
 
 
-def create_optimizer_w_learning_rate(
-        opt_name: str, learning_rate: float) -> tf.keras.optimizers:
-    if opt_name == "sgd":
-        return tf.keras.optimizers.SGD(learning_rate=learning_rate)
-    if opt_name == "adam":
-        return tf.keras.optimizers.Adam(learning_rate=learning_rate)
-    return "error"
-
-
 def load_json_param() -> Dict:
     return json.load(open("./model_parameters.json"))
 
@@ -162,15 +153,18 @@ def print_tensorboard_bash_command(log_name: str) -> None:
           log_name[14:18])
 
 
-def helper_fct_return_optimizer_w_learn_rate(opt_name: str, lr: float):
+def helper_fct_return_optimizer_w_learn_rate(opt_name: str,
+                                             lr: float) -> tf.keras.optimizers:
     if opt_name == "sgd":
         return tf.keras.optimizers.SGD(learning_rate=lr)
     if opt_name == "adam":
         return tf.keras.optimizers.Adam(learning_rate=lr)
-    return "error"
+    raise ValueError(
+        'optimizer_name not recognized or implemented in this fct')
 
 
-def build_model(hparams: Dict[str, int], raw_data: pd.DataFrame) -> float:
+def build_model(hparams: Dict[str, int],
+                raw_data: pd.DataFrame) -> keras.engine.functional.Functional:
     body = tf.keras.models.Sequential()
     for _ in range(int(hparams["HP_NUM_LAYERS"])):
         body.add(tf.keras.layers.Dense(hparams["HP_NUM_UNITS"]))
@@ -193,7 +187,8 @@ def build_model(hparams: Dict[str, int], raw_data: pd.DataFrame) -> float:
 
 
 def train_model(hparams: Dict[str, int], run_dir: str,
-                tuning_input_data: Dict[str, np.array], model) -> float:
+                tuning_input_data: Dict[str, np.array],
+                model) -> keras.engine.functional.Functional:
     model.fit(
         tuning_input_data["x_train"],
         tuning_input_data["y_train"],
@@ -242,47 +237,99 @@ def tune_model(log_name: str, tuning_input_data: Dict[str, np.array],
         session_num += 1
 
 
-def create_input_tensors(data: pd.DataFrame) -> Dict:
-    inputs = {}
+def create_input_tensors(
+        data: pd.DataFrame
+) -> Dict[str, keras.engine.keras_tensor.KerasTensor]:
+    """Turns each dataframe column into a keras tensor and returns them as a dict"""
+    tensors = {}
     for name, column in data.drop('rating', axis=1).items():
         dtype = column.dtype
         if dtype == object:
             dtype = tf.string
         else:
             dtype = tf.float32
-        inputs[name] = tf.keras.Input(shape=(1, ), name=name, dtype=dtype)
-    return inputs
+        tensors[name] = tf.keras.Input(shape=(1, ), name=name, dtype=dtype)
+    return tensors
 
 
-def preprocess_and_concatenate_tensors(data: pd.DataFrame, input_tensors: Dict):
-    """to do...
-    """    
-    numeric_inputs = {
+def select_numeric_tensors(
+    input_tensors: Dict[str, keras.engine.keras_tensor.KerasTensor]
+) -> Dict[str, keras.engine.keras_tensor.KerasTensor]:
+    """Returns all numeric tensors form input_tensors dictionary.
+    """
+    return {
         name: input
-        for name, input in input_tensors.items() if input.dtype == tf.float32
+        for name, input in input_tensors.items() if input.dtype == float
     }
-    tensor_numeric_inputs = tf.keras.layers.Concatenate()(list(
-        numeric_inputs.values()))
+
+
+def select_non_numeric_tensors(
+    input_tensors: Dict[str, keras.engine.keras_tensor.KerasTensor]
+) -> Dict[str, keras.engine.keras_tensor.KerasTensor]:
+    """Returns all non_numeric tensors form input_tensors dictionary.
+    """
+    return {
+        name: input
+        for name, input in input_tensors.items() if input.dtype != float
+    }
+
+
+def preprocess_numeric_tensors(
+    data: pd.DataFrame, tensors: Dict[str,
+                                      keras.engine.keras_tensor.KerasTensor]
+) -> keras.engine.keras_tensor.KerasTensor:
+    """Norms all tensors (must be numeric) and concats them into one tensor, which is returned. This return tensor has a shape of (None,num_of_numeric_features) as all numeric features are a number. That way all numeric features are represented in only one tensor.
+    """
+    layer_numeric_tensors = tf.keras.layers.Concatenate()(list(
+        tensors.values()))
     norm = tf.keras.layers.Normalization()
-    norm.adapt(np.array(data[numeric_inputs.keys()]))
-    all_numeric_inputs = norm(tensor_numeric_inputs)
-    preprocessed_inputs = [all_numeric_inputs]
-    for name, tensor in input_tensors.items():
-        if tensor.dtype == tf.float32:
-            continue
+    norm.adapt(np.array(data[tensors.keys()]))
+    numeric_tensor_normed = norm(layer_numeric_tensors)
+    return numeric_tensor_normed
+
+
+def preprocess_non_numeric_tensors(
+    data: pd.DataFrame, tensors: Dict[str,
+                                      keras.engine.keras_tensor.KerasTensor]
+) -> List[keras.engine.keras_tensor.KerasTensor]:
+    """Encodes all tensor (non-numeric) as categories and returns them as a list of tensors. Each return tensor has a shape of (None,num_of_categories).
+    """
+    non_numeric_inputs_cat_encoded = []
+    for name, tensor in tensors:
         lookup = tf.keras.layers.StringLookup(
             vocabulary=np.unique(data.drop('rating', axis=1)[name]))
         one_hot = tf.keras.layers.CategoryEncoding(
             num_tokens=lookup.vocabulary_size())
-        preprocessed_inputs.append(one_hot(lookup(tensor)))
-    return  tf.keras.layers.Concatenate()(preprocessed_inputs)
+        non_numeric_inputs_cat_encoded.append(one_hot(lookup(tensor)))
+    return non_numeric_inputs_cat_encoded
+
+
+def preprocess_and_concatenate_tensors(
+    data: pd.DataFrame,
+    input_tensors: Dict[str, keras.engine.keras_tensor.KerasTensor]
+) -> keras.engine.keras_tensor.KerasTensor:
+    """Norms all numeric tensors and category-encodes all non-numeric tensors. Returns all pre-processed tensors as a concatenated keras layer. 
+    """
+    return tf.keras.layers.Concatenate()([
+        preprocess_numeric_tensors(data,
+                                   select_numeric_tensors(input_tensors)),
+        *preprocess_non_numeric_tensors(
+            data,
+            select_non_numeric_tensors(input_tensors).items())
+    ])
+
 
 # def create_preprocessing_for_model(data:pd.DataFrame) ->Tuple[tf.keras.engine.functional.Functional,Dict[str,tf.keras.engine.keras_tensor.KerasTensor]]: #tpye hint issue here!
-def create_preprocessing_for_model(data: pd.DataFrame, input_tensors: Dict):
-    """Creates preprocessing object which is...?
+def create_preprocessing_for_model(
+    data: pd.DataFrame,
+    input_tensors: Dict[str, keras.engine.keras_tensor.KerasTensor]
+) -> keras.engine.functional.Functional:
+    """Creates preprocessing object.
     """
-    preprocessed_inputs_concatenated = preprocess_and_concatenate_tensors(data,input_tensors)
-    data_preprocessing = tf.keras.Model(input_tensors, preprocessed_inputs_concatenated)
+    preprocessed_inputs_concatenated = preprocess_and_concatenate_tensors(
+        data, input_tensors)
+    data_preprocessing = tf.keras.Model(input_tensors,
+                                        preprocessed_inputs_concatenated)
     data_features_dict = {
         name: np.array(value)
         for name, value in data.drop('rating', axis=1).items()
@@ -317,5 +364,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-# preprocessing noch weiter refactoren! vllt numeric und non numeric inputs noch trennen... immer an single resp denken...
 # nach prepro falls nichts anderes mehr datenimport auf normal und dann pr!
