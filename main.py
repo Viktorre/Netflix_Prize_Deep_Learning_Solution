@@ -55,6 +55,9 @@ def parse_and_join_data() -> pd.DataFrame:
     )[["movie_id", "year"]]
     data = format_movie_id_col_and_update_dtypes(data)
     data = data.merge(movie_data, on="movie_id")
+    data = data.astype({'movie_id': 'str', 'user_id': 'str'})
+    data.pop("date")
+    data['rating'] -= 1 
     return data
 
 
@@ -344,18 +347,25 @@ def create_preprocessing_for_model(
 
 def main() -> None:
     load_dotenv('.env.md')
-    rating_data = pd.read_pickle(
-        "C:/Users/reifv/root/Heidelberg Master/Netflix_AI_codes/data_densed_7557rows.pkl"
-    )
+    # rating_data = pd.read_pickle(
+    #     "C:/Users/reifv/root/Heidelberg Master/Netflix_AI_codes/data_densed_7557rows.pkl"
+    # )
+    # show_dataframe(rating_data)
+    # rating_data[
+    #     'rating'] -= 1  #these 3 lines will be merged into parse...() fct or somewhere else
+    # rating_data = rating_data.astype({'movie_id': 'str', 'user_id': 'str'})
+    # rating_data.pop("date")
+
+    # model_input_data = split_data_into_x_train_etc(
+    #     rating_data, y_col="rating", x_cols=["user_id", "movie_id", "year"])
+    
+    
+    
+    rating_data = parse_and_join_data()
     show_dataframe(rating_data)
-
-    rating_data[
-        'rating'] -= 1  #these 3 lines will be merged into parse...() fct or somewhere else
-    rating_data = rating_data.astype({'movie_id': 'str', 'user_id': 'str'})
-    rating_data.pop("date")
-
-    model_input_data = split_data_into_x_train_etc(
-        rating_data, y_col="rating", x_cols=["user_id", "movie_id", "year"])
+    model_input_data = split_data_into_x_train_etc(rating_data,
+                                                             y_col="rating",
+                                                             x_cols=["user_id", "movie_id", "year"])
     log_name = 'logs_' + datetime.datetime.now().strftime(
         "%Y%m%d-%H%M%S") + '/hparam_tuning'
     log_session(log_name)
@@ -364,4 +374,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-# nach prepro falls nichts anderes mehr datenimport auf normal und dann pr!
