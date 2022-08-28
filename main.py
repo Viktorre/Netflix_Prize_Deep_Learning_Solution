@@ -87,21 +87,10 @@ def get_and_scale_x(data: pd.DataFrame, x_cols: List[str]) -> pd.DataFrame:
 
 def turn_pandas_df_into_dict_of_np_arrays_of_selected_columns(
         data: pd.DataFrame, cols: List[str]) -> Dict[str, np.array]:
-    # return_dict = {}
-    # for col in cols:
-    #     return_dict[col] = data[col].values
+    """For each column of all select columns in "cols" list, this function stores the values of that column as a numpy array in dictionary with the column name as key. Dtypes from the input dataframe remain unchanged in the dictionary.
+    """
+    return dict(zip(cols,[data[col].values for col in cols]))
 
-    # return_dict = { k:v for (k,v) in zip(cols, data[cols].T.values)}
-    # return_dict = dict(zip(cols,data[cols].T.values))
-    # for float_col in data[cols].dtypes[data[cols].dtypes==float].index:
-    # return_dict[float_col] = return_dict[float_col].astype(float)
-
-    column_values = [data[column_name].values for column_name in cols]
-    return_dict = dict(zip(cols, column_values))
-    return return_dict
-
-
-# meine idee alten loop as list comprehension, und diese liste mit richtigen dtypes in dict comprehsenison
 
 
 def split_data_into_x_train_etc(data: pd.DataFrame, y_col: str,
