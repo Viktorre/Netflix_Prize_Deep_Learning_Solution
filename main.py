@@ -1,21 +1,28 @@
+# -*- coding: utf-8 -*-
 import datetime
-from dotenv import load_dotenv
 import json
+import os
+from itertools import product
+from typing import Dict, List, Tuple
+
 import keras
 import numpy as np
-import os
 import pandas as pd
-from itertools import product
-from sklearn.preprocessing import StandardScaler
-from sklearn.model_selection import train_test_split
-from tensorboard.plugins.hparams import api as hp
 import tensorflow as tf
+from dotenv import load_dotenv
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+from tensorboard.plugins.hparams import api as hp
 from tqdm import tqdm
-from typing import Dict, List, Tuple
 
 
 def format_movie_id_col_and_update_dtypes(data: pd.DataFrame) -> pd.DataFrame:
-    """This helper function extracts the movie IDs from the column "user_id" and saves them into a separate column. Also it turns the "_id" columns into type int and the "date" column into pandas date format."""
+    """This helper function extracts the movie IDs from the column "user_id"
+    and saves them into a separate column.
+
+    Also it turns the "_id" columns into type int and the "date" column
+    into pandas date format.
+    """
     mask = np.logical_and(data['rating'].isnull(), data['date'].isnull())
     data['movie_id'] = np.nan
     data['movie_id'] = data.loc[mask, 'user_id'].str.extract('(\d+)')
@@ -37,6 +44,7 @@ def prepare_drive_link(url: str) -> str:
 
 def parse_and_join_data() -> pd.DataFrame:
     """The 2 following movie files are being imported, parsed and joined:
+
     - ratings
     - (additional) info
     """
@@ -52,11 +60,11 @@ def parse_and_join_data() -> pd.DataFrame:
     movie_data = pd.read_csv(
         prepare_drive_link(os.getenv('url_movie_info_file')),
         header=0,
-    )[["movie_id", "year"]]
+    )[['movie_id', 'year']]
     data = format_movie_id_col_and_update_dtypes(data)
-    data = data.merge(movie_data, on="movie_id")
+    data = data.merge(movie_data, on='movie_id')
     data = data.astype({'movie_id': 'str', 'user_id': 'str'})
-    data.pop("date")
+    data.pop('date')
     data['rating'] -= 1
     return data
 
@@ -79,15 +87,28 @@ def get_and_scale_x(data: pd.DataFrame, x_cols: List[str]) -> pd.DataFrame:
 
 def turn_pandas_df_into_dict_of_np_arrays_of_selected_columns(
         data: pd.DataFrame, cols: List[str]) -> Dict[str, np.array]:
-    return_dict = {}
-    for col in cols:
-        return_dict[col] = np.array(pd.DataFrame(data)[col].values)
+    # return_dict = {}
+    # for col in cols:
+    #     return_dict[col] = data[col].values
+
+    # return_dict = { k:v for (k,v) in zip(cols, data[cols].T.values)}
+    # return_dict = dict(zip(cols,data[cols].T.values))
+    # for float_col in data[cols].dtypes[data[cols].dtypes==float].index:
+    # return_dict[float_col] = return_dict[float_col].astype(float)
+
+    column_values = [data[column_name].values for column_name in cols]
+    return_dict = dict(zip(cols, column_values))
     return return_dict
+
+
+# meine idee alten loop as list comprehension, und diese liste mit richtigen dtypes in dict comprehsenison
 
 
 def split_data_into_x_train_etc(data: pd.DataFrame, y_col: str,
                                 x_cols: List[str]) -> Dict[str, np.array]:
-    """Extracts training, validation and test data from the main dataframe. All x-variables are normalized between -1 and 1.
+    """Extracts training, validation and test data from the main dataframe.
+
+    All x-variables are normalized between -1 and 1.
     """
     train_data, temp_test_data = train_test_split(data,
                                                   test_size=0.3,
@@ -96,49 +117,50 @@ def split_data_into_x_train_etc(data: pd.DataFrame, y_col: str,
                                              test_size=0.5,
                                              random_state=42)
     return {
-        "x_train":
+        'x_train':
         turn_pandas_df_into_dict_of_np_arrays_of_selected_columns(
             train_data, x_cols),
-        "x_valid":
+        'x_valid':
         turn_pandas_df_into_dict_of_np_arrays_of_selected_columns(
             valid_data, x_cols),
-        "x_test":
+        'x_test':
         turn_pandas_df_into_dict_of_np_arrays_of_selected_columns(
             test_data, x_cols),
-        "y_train":
+        'y_train':
         train_data[y_col],
-        "y_valid":
+        'y_valid':
         valid_data[y_col],
-        "y_test":
+        'y_test':
         test_data[y_col]
     }
 
 
 def load_json_param() -> Dict:
-    return json.load(open("./model_parameters.json"))
+    return json.load(open('./model_parameters.json'))
 
 
 def get_hparam(parameter_name: str) -> hp.HParam:
-    """Accesses model_parameters.json by arg parameter_name as dict key and returns respective value as tensorboard.plugins.hparams object."""
+    """Accesses model_parameters.json by arg parameter_name as dict key and
+    returns respective value as tensorboard.plugins.hparams object."""
     return hp.HParam(parameter_name,
                      hp.Discrete(load_json_param()[parameter_name]))
 
 
 def get_all_hparams() -> Tuple[hp.HParam]:
-    """Uses get_hparam() to get all parameters that are tuned in tune_model().
-    """
+    """Uses get_hparam() to get all parameters that are tuned in
+    tune_model()."""
     return get_hparam('num_units'), get_hparam('num_layers'), get_hparam(
         'optimizer'), get_hparam('learning_rate'), get_hparam('batch_size')
 
 
 def get_log_name_with_current_timestamp() -> str:
-    datetime_now = datetime.datetime.now().strftime("%Y%m%d-%H%M")
+    datetime_now = datetime.datetime.now().strftime('%Y%m%d-%H%M')
     return f'logs_{datetime_now}/hparam_tuning'
 
 
 def log_session(session_name: str) -> None:
-    """Creates log folder in root directory and sets up logfile structure for hparams view in tensorboard.
-    """
+    """Creates log folder in root directory and sets up logfile structure for
+    hparams view in tensorboard."""
     with tf.summary.create_file_writer(session_name).as_default():
         hp.hparams_config(
             hparams=[*get_all_hparams()],
@@ -150,17 +172,20 @@ def log_session(session_name: str) -> None:
 
 
 def print_tensorboard_bash_command(log_name: str) -> None:
-    """Prints bash command for opening log file of current tuning run in browser. Highly recommended if many tuning parameters are run at once.
+    """Prints bash command for opening log file of current tuning run in
+    browser.
+
+    Highly recommended if many tuning parameters are run at once.
     """
-    print("tensorboard --logdir " + log_name[:20] + " --port " +
+    print('tensorboard --logdir ' + log_name[:20] + ' --port ' +
           log_name[14:18])
 
 
 def helper_fct_return_optimizer_w_learn_rate(opt_name: str,
                                              lr: float) -> tf.keras.optimizers:
-    if opt_name == "sgd":
+    if opt_name == 'sgd':
         return tf.keras.optimizers.SGD(learning_rate=lr)
-    if opt_name == "adam":
+    if opt_name == 'adam':
         return tf.keras.optimizers.Adam(learning_rate=lr)
     raise ValueError(
         'optimizer_name not recognized or implemented in this fct')
@@ -169,8 +194,8 @@ def helper_fct_return_optimizer_w_learn_rate(opt_name: str,
 def build_model(hparams: Dict[str, int],
                 raw_data: pd.DataFrame) -> keras.engine.functional.Functional:
     body = tf.keras.models.Sequential()
-    for _ in range(int(hparams["HP_NUM_LAYERS"])):
-        body.add(tf.keras.layers.Dense(hparams["HP_NUM_UNITS"]))
+    for _ in range(int(hparams['HP_NUM_LAYERS'])):
+        body.add(tf.keras.layers.Dense(hparams['HP_NUM_UNITS']))
     body.add(tf.keras.layers.Dense(5))
     input_tensors = create_input_tensors(raw_data)
     preprocessing_head = create_preprocessing_for_model(
@@ -180,11 +205,11 @@ def build_model(hparams: Dict[str, int],
     model = tf.keras.Model(input_tensors, result)
     model.compile(
         optimizer=helper_fct_return_optimizer_w_learn_rate(
-            hparams["HP_OPTIMIZER"],
-            hparams["HP_LEARNING_RATE"],
+            hparams['HP_OPTIMIZER'],
+            hparams['HP_LEARNING_RATE'],
         ),
         loss=tf.keras.losses.SparseCategoricalCrossentropy(),
-        metrics=[load_json_param()["metric_accuracy"]],
+        metrics=[load_json_param()['metric_accuracy']],
     )
     return model
 
@@ -193,28 +218,32 @@ def train_model(hparams: Dict[str, int], run_dir: str,
                 tuning_input_data: Dict[str, np.array],
                 model) -> keras.engine.functional.Functional:
     model.fit(
-        tuning_input_data["x_train"],
-        tuning_input_data["y_train"],
-        validation_data=(tuning_input_data["x_valid"],
-                         tuning_input_data["y_valid"]),
-        epochs=load_json_param()["epochs"],
+        tuning_input_data['x_train'],
+        tuning_input_data['y_train'],
+        validation_data=(tuning_input_data['x_valid'],
+                         tuning_input_data['y_valid']),
+        epochs=load_json_param()['epochs'],
         shuffle=True,
         verbose=True,
         callbacks=[
             tf.keras.callbacks.TensorBoard(
-                log_dir=run_dir + '_' + str(hparams["HP_NUM_LAYERS"]) +
-                'layers_' + str(hparams["HP_NUM_UNITS"]) + 'nodes_' +
-                hparams["HP_OPTIMIZER"] + str(hparams["HP_LEARNING_RATE"]) +
-                '_' + str(hparams["HP_BATCH_SIZE"]),
+                log_dir=run_dir + '_' + str(hparams['HP_NUM_LAYERS']) +
+                'layers_' + str(hparams['HP_NUM_UNITS']) + 'nodes_' +
+                hparams['HP_OPTIMIZER'] + str(hparams['HP_LEARNING_RATE']) +
+                '_' + str(hparams['HP_BATCH_SIZE']),
                 histogram_freq=1)
         ],
-        batch_size=(hparams["HP_BATCH_SIZE"]))
+        batch_size=(hparams['HP_BATCH_SIZE']))
     return model
 
 
 def tune_model(log_name: str, tuning_input_data: Dict[str, np.array],
                raw_data: pd.DataFrame) -> None:
-    """"Loops through hparam combinations. For each combination it trains the ANN and logs its metrics in two ways: Training and evaluation is logged in train_model(). Testing is logged separately afterwards. Both can be seen in tensorboard.
+    """"Loops through hparam combinations.
+
+    For each combination it trains the ANN and logs its metrics in two
+    ways: Training and evaluation is logged in train_model(). Testing is
+    logged separately afterwards. Both can be seen in tensorboard.
     """
     session_num = 0
     for hparams_combination in tqdm(product(
@@ -223,18 +252,18 @@ def tune_model(log_name: str, tuning_input_data: Dict[str, np.array],
             get_hparam('optimizer').domain.values,
             get_hparam('learning_rate').domain.values,
             get_hparam('batch_size').domain.values),
-                                    desc="Tuning hyper parameters"):
+                                    desc='Tuning hyper parameters'):
         hparams = dict(
-            zip(("HP_NUM_UNITS", "HP_NUM_LAYERS", "HP_OPTIMIZER",
-                 "HP_LEARNING_RATE", "HP_BATCH_SIZE"), hparams_combination))
+            zip(('HP_NUM_UNITS', 'HP_NUM_LAYERS', 'HP_OPTIMIZER',
+                 'HP_LEARNING_RATE', 'HP_BATCH_SIZE'), hparams_combination))
         run_dir = f'{log_name}_run-{session_num}'
         with tf.summary.create_file_writer(run_dir).as_default():
             hp.hparams(dict(zip((get_all_hparams()), hparams_combination)))
             model = train_model(hparams, run_dir, tuning_input_data,
                                 build_model(hparams, raw_data))
-            tf.summary.scalar(load_json_param()["metric_accuracy"],
-                              model.evaluate(tuning_input_data["x_test"],
-                                             tuning_input_data["y_test"],
+            tf.summary.scalar(load_json_param()['metric_accuracy'],
+                              model.evaluate(tuning_input_data['x_test'],
+                                             tuning_input_data['y_test'],
                                              verbose=False)[1],
                               step=1)
         session_num += 1
@@ -243,7 +272,8 @@ def tune_model(log_name: str, tuning_input_data: Dict[str, np.array],
 def create_input_tensors(
         data: pd.DataFrame
 ) -> Dict[str, keras.engine.keras_tensor.KerasTensor]:
-    """Turns each dataframe column into a keras tensor and returns them as a dict"""
+    """Turns each dataframe column into a keras tensor and returns them as a
+    dict."""
     tensors = {}
     for name, column in data.drop('rating', axis=1).items():
         dtype = column.dtype
@@ -258,8 +288,7 @@ def create_input_tensors(
 def select_numeric_tensors(
     input_tensors: Dict[str, keras.engine.keras_tensor.KerasTensor]
 ) -> Dict[str, keras.engine.keras_tensor.KerasTensor]:
-    """Returns all numeric tensors form input_tensors dictionary.
-    """
+    """Returns all numeric tensors form input_tensors dictionary."""
     return {
         name: input
         for name, input in input_tensors.items() if input.dtype == float
@@ -269,8 +298,7 @@ def select_numeric_tensors(
 def select_non_numeric_tensors(
     input_tensors: Dict[str, keras.engine.keras_tensor.KerasTensor]
 ) -> Dict[str, keras.engine.keras_tensor.KerasTensor]:
-    """Returns all non_numeric tensors form input_tensors dictionary.
-    """
+    """Returns all non_numeric tensors form input_tensors dictionary."""
     return {
         name: input
         for name, input in input_tensors.items() if input.dtype != float
@@ -281,7 +309,12 @@ def preprocess_numeric_tensors(
     data: pd.DataFrame, tensors: Dict[str,
                                       keras.engine.keras_tensor.KerasTensor]
 ) -> keras.engine.keras_tensor.KerasTensor:
-    """Norms all tensors (must be numeric) and concats them into one tensor, which is returned. This return tensor has a shape of (None,num_of_numeric_features) as all numeric features are a number. That way all numeric features are represented in only one tensor.
+    """Norms all tensors (must be numeric) and concats them into one tensor,
+    which is returned.
+
+    This return tensor has a shape of (None,num_of_numeric_features) as
+    all numeric features are a number. That way all numeric features are
+    represented in only one tensor.
     """
     layer_numeric_tensors = tf.keras.layers.Concatenate()(list(
         tensors.values()))
@@ -295,7 +328,10 @@ def preprocess_non_numeric_tensors(
     data: pd.DataFrame, tensors: Dict[str,
                                       keras.engine.keras_tensor.KerasTensor]
 ) -> List[keras.engine.keras_tensor.KerasTensor]:
-    """Encodes all tensor (non-numeric) as categories and returns them as a list of tensors. Each return tensor has a shape of (None,num_of_categories).
+    """Encodes all tensor (non-numeric) as categories and returns them as a
+    list of tensors.
+
+    Each return tensor has a shape of (None,num_of_categories).
     """
     non_numeric_inputs_cat_encoded = []
     for name, tensor in tensors:
@@ -311,7 +347,9 @@ def preprocess_and_concatenate_tensors(
     data: pd.DataFrame,
     input_tensors: Dict[str, keras.engine.keras_tensor.KerasTensor]
 ) -> keras.engine.keras_tensor.KerasTensor:
-    """Norms all numeric tensors and category-encodes all non-numeric tensors. Returns all pre-processed tensors as a concatenated keras layer. 
+    """Norms all numeric tensors and category-encodes all non-numeric tensors.
+
+    Returns all pre-processed tensors as a concatenated keras layer.
     """
     return tf.keras.layers.Concatenate()([
         preprocess_numeric_tensors(data,
@@ -322,13 +360,11 @@ def preprocess_and_concatenate_tensors(
     ])
 
 
-# def create_preprocessing_for_model(data:pd.DataFrame) ->Tuple[tf.keras.engine.functional.Functional,Dict[str,tf.keras.engine.keras_tensor.KerasTensor]]: #tpye hint issue here!
 def create_preprocessing_for_model(
     data: pd.DataFrame,
     input_tensors: Dict[str, keras.engine.keras_tensor.KerasTensor]
 ) -> keras.engine.functional.Functional:
-    """Creates preprocessing object.
-    """
+    """Creates preprocessing object."""
     preprocessed_inputs_concatenated = preprocess_and_concatenate_tensors(
         data, input_tensors)
     data_preprocessing = tf.keras.Model(input_tensors,
@@ -350,12 +386,12 @@ def main() -> None:
     rating_data = parse_and_join_data()
     show_dataframe(rating_data)
     model_input_data = split_data_into_x_train_etc(
-        rating_data, y_col="rating", x_cols=["user_id", "movie_id", "year"])
+        rating_data, y_col='rating', x_cols=['user_id', 'movie_id', 'year'])
     log_name = 'logs_' + datetime.datetime.now().strftime(
-        "%Y%m%d-%H%M%S") + '/hparam_tuning'
+        '%Y%m%d-%H%M%S') + '/hparam_tuning'
     log_session(log_name)
     tune_model(log_name, model_input_data, rating_data)
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()
