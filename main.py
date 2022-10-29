@@ -37,6 +37,15 @@ def format_movie_id_col_and_update_dtypes(data: pd.DataFrame) -> pd.DataFrame:
     return data
 
 
+def subtract_rating_integers_by_one(data: pd.DataFrame) -> pd.DataFrame:
+    """Turns rating integers from [1,2,3,4,5] to [0,1,2,3,4].
+
+    This is needed for the tensor model.
+    """
+    data['rating'] -= 1
+    return data
+
+
 def prepare_drive_link(url: str) -> str:
     return 'https://drive.google.com/uc?export=download&id=' + url.split(
         '/')[-2]
@@ -62,10 +71,10 @@ def parse_and_join_data() -> pd.DataFrame:
         header=0,
     )[['movie_id', 'year']]
     data = format_movie_id_col_and_update_dtypes(data)
+    data = subtract_rating_integers_by_one(data)
     data = data.merge(movie_data, on='movie_id')
     data = data.astype({'movie_id': 'str', 'user_id': 'str'})
     data.pop('date')
-    data['rating'] -= 1
     return data
 
 
@@ -87,10 +96,13 @@ def get_and_scale_x(data: pd.DataFrame, x_cols: List[str]) -> pd.DataFrame:
 
 def turn_pandas_df_into_dict_of_np_arrays_of_selected_columns(
         data: pd.DataFrame, cols: List[str]) -> Dict[str, np.array]:
-    """For each column of all select columns in "cols" list, this function stores the values of that column as a numpy array in dictionary with the column name as key. Dtypes from the input dataframe remain unchanged in the dictionary.
-    """
-    return dict(zip(cols,[data[col].values for col in cols]))
+    """For each column of all select columns in "cols" list, this function
+    stores the values of that column as a numpy array in dictionary with the
+    column name as key.
 
+    Dtypes from the input dataframe remain unchanged in the dictionary.
+    """
+    return {col: data[col].values for col in cols}
 
 
 def split_data_into_x_train_etc(data: pd.DataFrame, y_col: str,
@@ -124,7 +136,7 @@ def split_data_into_x_train_etc(data: pd.DataFrame, y_col: str,
     }
 
 
-def load_json_param() -> Dict:
+def load_json_params() -> Dict:
     return json.load(open('./model_parameters.json'))
 
 
@@ -132,14 +144,18 @@ def get_hparam(parameter_name: str) -> hp.HParam:
     """Accesses model_parameters.json by arg parameter_name as dict key and
     returns respective value as tensorboard.plugins.hparams object."""
     return hp.HParam(parameter_name,
-                     hp.Discrete(load_json_param()[parameter_name]))
+                     hp.Discrete(load_json_params()[parameter_name]))
 
 
 def get_all_hparams() -> Tuple[hp.HParam]:
-    """Uses get_hparam() to get all parameters that are tuned in
-    tune_model()."""
-    return get_hparam('num_units'), get_hparam('num_layers'), get_hparam(
-        'optimizer'), get_hparam('learning_rate'), get_hparam('batch_size')
+    """Uses get_hparam() to get all parameters that are tuned in tune_model()
+    and returns them as tuple in a specific order which is hard coded."""
+    ordered_lists_of_hparams = (get_hparam('num_units'),
+                                get_hparam('num_layers'),
+                                get_hparam('optimizer'),
+                                get_hparam('learning_rate'),
+                                get_hparam('batch_size'))
+    return ordered_lists_of_hparams
 
 
 def get_log_name_with_current_timestamp() -> str:
@@ -154,7 +170,7 @@ def log_session(session_name: str) -> None:
         hp.hparams_config(
             hparams=[*get_all_hparams()],
             metrics=[
-                hp.Metric(load_json_param()['metric_accuracy'],
+                hp.Metric(load_json_params()['metric_accuracy'],
                           display_name='Accuracy')
             ],
         )
@@ -198,7 +214,7 @@ def build_model(hparams: Dict[str, int],
             hparams['HP_LEARNING_RATE'],
         ),
         loss=tf.keras.losses.SparseCategoricalCrossentropy(),
-        metrics=[load_json_param()['metric_accuracy']],
+        metrics=[load_json_params()['metric_accuracy']],
     )
     return model
 
@@ -211,7 +227,7 @@ def train_model(hparams: Dict[str, int], run_dir: str,
         tuning_input_data['y_train'],
         validation_data=(tuning_input_data['x_valid'],
                          tuning_input_data['y_valid']),
-        epochs=load_json_param()['epochs'],
+        epochs=load_json_params()['epochs'],
         shuffle=True,
         verbose=True,
         callbacks=[
@@ -250,7 +266,7 @@ def tune_model(log_name: str, tuning_input_data: Dict[str, np.array],
             hp.hparams(dict(zip((get_all_hparams()), hparams_combination)))
             model = train_model(hparams, run_dir, tuning_input_data,
                                 build_model(hparams, raw_data))
-            tf.summary.scalar(load_json_param()['metric_accuracy'],
+            tf.summary.scalar(load_json_params()['metric_accuracy'],
                               model.evaluate(tuning_input_data['x_test'],
                                              tuning_input_data['y_test'],
                                              verbose=False)[1],
