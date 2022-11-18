@@ -8,7 +8,7 @@ class TestFormatMainData(TestCase):
 
     expected_column_names = ['user_id', 'rating', 'date', 'movie_id']
 
-    def create_test_dataframe(self) -> pd.DataFrame:
+    def __create_test_dataframe(self) -> pd.DataFrame:
         return pd.DataFrame({
             'user_id': ['1:', '212101', '312101', '2:', '401211', '501211'],
             'rating': [pd.NA, 2, 3, pd.NA, 5, 5],
@@ -22,14 +22,15 @@ class TestFormatMainData(TestCase):
         })
 
     def test_column_names(self):
-        df = self.create_test_dataframe()
-        df = format_movie_id_col_and_update_dtypes(df)
-        self.assertListEqual(df.columns.tolist(), self.expected_column_names)
+        rating_test_data = self.__create_test_dataframe()
+        rating_test_data = format_movie_id_col_and_update_dtypes(rating_test_data)
+        self.assertListEqual(rating_test_data.columns.tolist(), self.expected_column_names)
 
     def test_dtypes_conversion(self):
-        df = self.create_test_dataframe()
-        df = format_movie_id_col_and_update_dtypes(df)
-        self.assertTrue(ptypes.is_datetime64_any_dtype(df['date']))
-        for column_that_should_be_numeric in ['user_id', 'rating', 'movie_id']:
+        rating_test_data = self.__create_test_dataframe()
+        rating_test_data = format_movie_id_col_and_update_dtypes(rating_test_data)
+        self.assertTrue(ptypes.is_datetime64_any_dtype(rating_test_data['date']))
+        numeric_columns = ['user_id', 'rating', 'movie_id']
+        for numeric_column in numeric_columns:
             self.assertTrue(
-                ptypes.is_numeric_dtype(df[column_that_should_be_numeric]))
+                ptypes.is_numeric_dtype(rating_test_data[numeric_column]))
