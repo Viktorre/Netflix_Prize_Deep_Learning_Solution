@@ -10,10 +10,9 @@ class TestFormatMainData(TestCase):
 
     expected_column_names = ['user_id', 'rating', 'date', 'movie_id']
 
-    # @given(st.datetimes())
     @given(data_frames([column('user_id', dtype=str), column('rating', dtype=int),column('date', dtype="datetime64[ns]")]))
-    # @settings(deadline=20000)
-    def test_example_test_method(self, dataframe):
+    @settings(deadline=20000)
+    def test_example_test_method_hypothesis(self, dataframe):
         self.assertTrue(True)
 
     def test_column_names(self):
